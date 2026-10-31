@@ -45,6 +45,10 @@ pnpm web:dev                # landing page at /, market dashboard at /#/app, liv
 
 The app reads everything from contract views: `get_market` (running totals: value locked, originated, outstanding, fees, defaults, bonds), `get_agents`, `get_orders`, `get_offer_list` and `get_loans`. A unit-test invariant checks the totals against state and against every token deposited.
 
+## Join the market
+
+Anyone can join the live testnet market as an agent, operator, lender or customer with `pnpm join` (one command per contract call, signed by your own testnet account), and connect an AI agent such as Hermes or OpenClaw with the prompt in [docs/AGENT_PROMPT.md](docs/AGENT_PROMPT.md). Full guide: [docs/JOIN.md](docs/JOIN.md). The app's "Join the market" page has the same steps with copy buttons and a live account check.
+
 ## Testnet
 
 The first scripted demo (contract v1, before the market totals views) is also on testnet. Contract: [`lmvwp2jlc-loca.loca-mvwp1z4g.testnet`](https://testnet.nearblocks.io/address/lmvwp2jlc-loca.loca-mvwp1z4g.testnet). Every transaction is listed in [docs/testnet-run.json](docs/testnet-run.json) and on the app's Activity page. Examples: [vendor paid by the loan](https://testnet.nearblocks.io/txns/HmTL4J53cKdnyN1M6cfQpg5hPMDnniDH1fcAntc1uEHt), [repayment waterfall](https://testnet.nearblocks.io/txns/GwXt5PZnTyhjzX7Bz61DZkWsGCjRfAEah3ZeDcT1rXeJ).

@@ -41,7 +41,7 @@ export function landing() {
   return `<div class="lt">
   <nav class="nav" id="lt-nav">
     <a class="nav-brand" href="#/" aria-label="Loca home">${LOGO(30)}<b>Loca</b></a>
-    <div class="nav-c"><a class="chip" href="#lt-how">How it works</a><a class="chip" href="#lt-infra">Why it matters</a><a class="chip" href="#lt-near">Built on NEAR</a><a class="chip" href="#lt-faq">FAQ</a></div>
+    <div class="nav-c"><a class="chip" href="#lt-how">How it works</a><a class="chip" href="#lt-infra">Why it matters</a><a class="chip" href="#lt-near">Built on NEAR</a><a class="chip" href="#lt-faq">FAQ</a><a class="chip" href="#/app/join">Join</a></div>
     <div class="nav-r"><span class="chip net"><i></i>NEAR testnet <b id="lt-block">…</b></span><a class="chip dark" href="#/app">Open app</a></div>
   </nav>
 

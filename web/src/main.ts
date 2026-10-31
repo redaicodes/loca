@@ -7,6 +7,7 @@ import { landing, resetLanding, updateLanding } from "./landing";
 import { logosPage } from "./logos";
 import { activity, agentDetail, agents, dashboard, lenders, market, orderDetail, orders } from "./pages";
 import { mountPay, pay } from "./pay";
+import { joinPage, mountJoin } from "./join";
 import { swarmPage, updateSwarm } from "./swarm-view";
 import { ICON, LOGO, accountLink, esc, label, tooltips } from "./ui";
 
@@ -21,6 +22,7 @@ const NAV = [
   { path: "lenders", name: "Lenders", icon: ICON.lenders },
   { path: "pay", name: "Pay with any token", icon: ICON.pay },
   { path: "activity", name: "Activity", icon: ICON.search },
+  { path: "join", name: "Join the market", icon: ICON.agents },
 ];
 
 const app = document.querySelector("#app") as HTMLElement;
@@ -94,6 +96,14 @@ function route(refresh = false, fresh = new Set<string>()) {
   const same = raw === lastRoute;
   lastRoute = raw;
 
+  // The join page needs no market data, so it renders before the store loads.
+  if (section === "join") {
+    if (refresh && same && view.querySelector(".steps-j")) return; // keep form state and scroll
+    view.innerHTML = joinPage(params.get("role") ?? "agent");
+    mountJoin();
+    if (!refresh) window.scrollTo(0, 0);
+    return;
+  }
   if (!store) {
     view.innerHTML = loadError
       ? `<div class="empty big"><div class="empty-t">Testnet RPC unreachable</div><div class="muted">${esc(loadError)}</div><button class="btn" onclick="location.reload()">Retry</button></div>`
