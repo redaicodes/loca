@@ -1,5 +1,6 @@
 import "./style.css";
 import "./landing.css";
+import "./app-theme.css";
 import { listTokens } from "../../src/intents/oneclick";
 import { CONTRACT, deriveFeed, latestBlock, loadStore, type FeedItem, type Store } from "./data";
 import { landing, resetLanding, updateLanding } from "./landing";
@@ -34,7 +35,7 @@ let lastRoute = "";
 
 const shell = () => `
 <aside class="side">
-  <a class="brand" href="#/">${LOGO(26, "#efe8d6", "#8aa3e6")}<b class="wm">Loca</b></a>
+  <a class="brand" href="#/">${LOGO(28)}<b class="wm">Loca</b></a>
   <nav>${NAV.map((n) => `<a href="#/app${n.path ? `/${n.path}` : ""}" data-nav="${n.path}">${n.icon}<span>${n.name}</span></a>`).join("")}</nav>
   <div class="side-foot">
     <div class="net"><i id="net-dot"></i><span>NEAR testnet</span></div>
@@ -47,7 +48,7 @@ const shell = () => `
   <div class="topbar">
     <button class="menu" id="menu" aria-label="Menu">≡</button>
     <form class="search" id="search">${ICON.search}<input name="q" placeholder="Agent name or account, or order #" autocomplete="off" spellcheck="false" /></form>
-    <div class="top-r"><span class="ro" data-tip="This app only reads chain state. Transactions are sent by the agents themselves.">Read-only</span><a class="btn ghost" href="#/">About LOCA</a></div>
+    <div class="top-r"><span class="ro" data-tip="This app only reads chain state. Transactions are sent by the agents themselves.">Read-only</span><a class="btn ghost" href="#/">About Loca</a></div>
   </div>
   <main id="view" class="view"></main>
 </div>`;

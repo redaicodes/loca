@@ -212,7 +212,8 @@ function lenderTable(s: Store) {
     const deployed = won.reduce((a, x) => a + n(x.principal), 0);
     const loss = won.filter((x) => x.status === "Defaulted").reduce((a, x) => a + n(x.principal) + n(x.fee) - n(x.repaid), 0);
     const active = won.filter((x) => x.status === "Active").reduce((a, x) => a + n(x.principal), 0);
-    return { l, bids: bids.length, won: won.length, fees, deployed, loss, active, net: fees - loss };
+    // Win rate over the same window as the bids, so it can never exceed 100%.
+    return { l, bids: bids.length, won: bids.filter((o) => o.status === "Accepted").length, fees, deployed, loss, active, net: fees - loss };
   });
   return card("Lenders", `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Lender</th><th>Strategy</th><th class="num">Bids</th><th class="num">Won</th><th class="num">Win rate</th><th class="num">Lent</th><th class="num">Active</th><th class="num">Fees</th><th class="num">Losses</th><th class="num">Net</th></tr></thead><tbody>${rows
     .map((r) => `<tr><td>${acct(r.l.id)}</td><td>${strategyName(r.l.strategy)}</td><td class="num mono">${r.bids}</td><td class="num mono">${r.won}</td><td class="num mono">${r.bids ? pct((r.won / r.bids) * 100, 0) : "–"}</td>
