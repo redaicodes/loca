@@ -1,4 +1,5 @@
 import "./style.css";
+import "./landing.css";
 import { listTokens } from "../../src/intents/oneclick";
 import { CONTRACT, deriveFeed, latestBlock, loadStore, type FeedItem, type Store } from "./data";
 import { landing, resetLanding, updateLanding } from "./landing";
@@ -8,7 +9,7 @@ import { mountPay, pay } from "./pay";
 import { swarmPage, updateSwarm } from "./swarm-view";
 import { ICON, LOGO, accountLink, esc, label, tooltips } from "./ui";
 
-const POLL_MS = 5000;
+const POLL_MS = 8000;
 
 const NAV = [
   { path: "", name: "Market", icon: ICON.overview },

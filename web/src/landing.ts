@@ -5,6 +5,7 @@ import { agentRows, metrics } from "./pages";
 import { EXPLORER_ACCOUNT } from "./data";
 import { LOGO, esc, label } from "./ui";
 
+/** NEAR's N mark, simplified, for the ecosystem section. */
 const SOURCES = {
   quickbooks: "https://stacker.com/stories/small-business/small-businesses-are-owed-17500-average-how-fastest-paid-are-closing-gap",
   trm: "https://www.trmlabs.com/trm-tech-blog/whos-actually-paying-measuring-ai-agent-payments-onchain",
@@ -12,41 +13,48 @@ const SOURCES = {
 
 const money = (raw: string | number, dp = 2) => `$${(Number(raw) / 1e6).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 
+/** Retro window: black title bar, grey frame, the page's one container style. */
 const win = (title: string, body: string, cls = "", right = "") =>
-  `<div class="lt-win ${cls}"><div class="lt-win-bar"><span>${title}</span><span>${right}</span></div><div class="lt-win-body">${body}</div></div>`;
+  `<div class="w ${cls}"><div class="w-bar"><span>${title}</span><span>${right}</span></div><div class="w-body">${body}</div></div>`;
+
+const head = (tag: string, title: string, sub = "") =>
+  `<div class="sh"><span class="tag">${tag}</span><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ""}</div>`;
 
 const FAQ: [string, string][] = [
-  ["Is this just DeFi lending for agents?", "No. DeFi lending asks the borrower to lock up more value than it borrows. An agent that is short of cash has nothing to lock. LOCA lends against the customer's payment already sitting in escrow, so the borrower posts nothing."],
-  ["Isn't this invoice factoring?", "Factoring buys an unpaid invoice from a registered company, after days of review, and chases the debtor for payment. With LOCA the customer has already paid into escrow, the borrower is software, funding takes seconds, and the contract repays the lender itself."],
-  ["Why can't a bank do this?", "A bank needs a legal person, a credit file and documents. An agent has an account, a track record and a job. LOCA prices exactly those."],
+  ["Is this just DeFi lending for agents?", "No. DeFi lending asks the borrower to lock up more value than it borrows. An agent that is short of cash has nothing to lock. Loca lends against the customer's payment already sitting in escrow, so the borrower posts nothing."],
+  ["Isn't this invoice factoring?", "Factoring buys an unpaid invoice from a registered company after days of review, then chases the debtor. With Loca the customer has already paid into escrow, the borrower is software, funding takes seconds, and the contract repays the lender itself."],
+  ["Why can't a bank do this?", "A bank needs a legal person, a credit file and documents. An agent has an account, a track record and a job. Loca prices exactly those."],
   ["What stops an agent spending the loan on itself?", "It never receives it. The loan goes straight to a vendor that both its operator and the protocol approved."],
   ["What happens if the agent doesn't deliver?", "The customer cancels after the deadline and gets the escrow back. The operator's bond covers the lender first. Any loss left over goes on the agent's public record, and its score falls."],
+  ["Why NEAR?", "Borrowing needs an identity lenders can check, payment from wherever customers are, and cheap, fast settlement. NEAR has all three built in: named accounts, NEAR Intents and low-cost contracts."],
   ["Is this live?", "On NEAR testnet, yes. Eight agents, three lender agents and six customers trade on the market contract, and every number on this page is read from it. Test USDC has no value."],
+];
+
+const NEAR_PIECES: [string, string][] = [
+  ["Named accounts", "Every agent, operator and lender is a readable NEAR account. Its credit record is attached to that name."],
+  ["NEAR Intents", `Customers pay with any of <b data-n="assets">210</b> assets. 1Click swaps to the exact USDC owed and calls the contract in one step.`],
+  ["NEP-141 escrow", "Orders, bids and bonds arrive through <code>ft_transfer_call</code>. Rejected deposits are credited back, never stranded."],
+  ["Contract views", "Scores, orders, loans and market totals are public views. No indexer, no backend, no API key."],
 ];
 
 export function landing() {
   return `<div class="lt">
-  <nav class="lt-nav" id="lt-nav">
-    <a class="lt-brand" href="#/">${LOGO(30, "currentColor")}<b>Loca</b></a>
-    <div class="lt-nav-c"><a href="#lt-how">How it works</a><a href="#lt-category">Why it's new</a><a href="#lt-faq">FAQ</a><a href="#/app/swarm">Agent swarm</a></div>
-    <div class="lt-nav-r"><span class="lt-net"><i></i>NEAR testnet <b id="lt-block">…</b></span><a class="lt-cta" href="#/app">Open app</a></div>
+  <nav class="nav" id="lt-nav">
+    <a class="nav-brand" href="#/" aria-label="Loca home">${LOGO(30)}<b>Loca</b></a>
+    <div class="nav-c"><a class="chip" href="#lt-how">How it works</a><a class="chip" href="#lt-infra">Why it matters</a><a class="chip" href="#lt-near">Built on NEAR</a><a class="chip" href="#lt-faq">FAQ</a></div>
+    <div class="nav-r"><span class="chip net"><i></i>NEAR testnet <b id="lt-block">…</b></span><a class="chip dark" href="#/app">Open app</a></div>
   </nav>
 
-  <header class="lt-hero">
-    <div class="lt-hero-grid">
-      <div class="lt-hero-l">
-        <p class="lt-acro"><b>L</b>ine <b>o</b>f <b>C</b>redit for <b>A</b>gents</p>
-        <h1>The First Credit Line Built For AI Agents</h1>
-        <p class="lt-lede">Agents borrow against orders their customers have already paid into escrow. Lenders compete on price. The contract repays them first.</p>
-        <div class="lt-hero-cta"><a class="lt-btn" href="#/app">Open the market</a><a class="lt-btn ghost" href="#/app/swarm">Explore the agent swarm</a></div>
-      </div>
-      <div class="lt-console" aria-label="Live calls to the LOCA market contract">
-        <div class="lt-console-h"><span><i class="lt-dot"></i>market.loca-swarm.testnet</span><span>block <b id="lt-block2">…</b></span></div>
-        <ol class="lt-console-log" id="lt-log"><li class="muted">connecting to NEAR testnet…</li></ol>
-        <div class="lt-console-f"><span>Contract calls, read from chain state</span><span class="lt-cursor">_</span></div>
-      </div>
+  <header class="hero">
+    <div class="sky" aria-hidden="true"></div>
+    <div class="hero-in">
+      ${win("Latest on the market", `<p id="lt-news">Reading the market contract</p>`, "news")}
+      <p class="leader"><span>Loca</span><i></i><span>Line of Credit for Agents</span></p>
+      <h1>The Credit Layer For The Agent Economy</h1>
+      <p class="hero-sub">Agents borrow against orders their customers have already paid into escrow. Lender agents compete on price. A contract on NEAR repays them first.</p>
+      <div class="links"><a href="#/app">Open The Market</a><a href="#/app/swarm">Explore The Agent Swarm</a></div>
     </div>
-    <div class="lt-strip">
+    <div class="strip">
       <div><span>Value locked</span><b data-n="tvl">–</b></div>
       <div><span>Credit originated</span><b data-n="credit">–</b></div>
       <div><span>Loans</span><b data-n="loans">–</b></div>
@@ -55,82 +63,77 @@ export function landing() {
     </div>
   </header>
 
-  <section class="lt-pink" id="lt-how">
-    <div class="lt-stage">
-      ${win("Order replay", `<div class="lx-ticket" id="lx-ticket" aria-live="polite"><div class="lx-ticket-skel">Loading a settled loan</div></div>`, "lt-ticket-win", `<span class="lt-blink"></span> settled on testnet`)}
-      <div class="lt-stage-side">
-        ${win("Market", `<dl class="lt-kv"><div><dt>Escrowed</dt><dd data-n="escrow">–</dd></div><div><dt>Lent</dt><dd data-n="credit">–</dd></div><div><dt>Repaid</dt><dd data-n="repaid">–</dd></div><div><dt>Avg fee</dt><dd data-n="fee">–</dd></div></dl>`, "", "live")}
-        ${win("Rules", `<ul class="lt-rules"><li>Loans pay vendors, never the agent</li><li>Escrow repays lenders first</li><li>Operator bond takes first loss</li><li>One loan per order</li></ul>`)}
-      </div>
+  <section class="sec band-a" id="lt-how">
+    ${head("How it works", "Every Loan Settles On Chain", "A customer escrows payment, lenders bid for the advance, the vendor is paid, and the escrow repays the lender before the agent.")}
+    <div class="pair">
+      ${win("Order replay", `<div class="lx-ticket" id="lx-ticket" aria-live="polite"><div class="lx-ticket-skel">Loading a settled loan</div></div>`, "tall", `<span class="blink"></span> settled`)}
+      ${win("market.loca-swarm.testnet", `<ol class="log" id="lt-log"><li class="log-wait">Connecting to NEAR testnet</li></ol>`, "tall", `block <b id="lt-block2">…</b>`)}
     </div>
-    <h2>We Lend Against The Order, Not The Borrower</h2>
-    <div class="lt-cols">
-      <div><span class="lt-tag">The customer</span><p>Pays the agent's price into escrow, from NEAR or any chain through NEAR Intents.</p></div>
-      <div><span class="lt-tag">The lenders</span><p>Read the agent's public record and bid to advance up to half the order. Cheapest valid bid wins.</p></div>
-      <div><span class="lt-tag">The escrow</span><p>Pays the vendor, then repays the lender when the work is approved. The agent keeps the rest.</p></div>
+    <div class="cols3">
+      <div><span class="tag">Customer</span><p>Pays the agent's price into escrow, from NEAR or any chain through NEAR Intents.</p></div>
+      <div><span class="tag">Lenders</span><p>Read the agent's public record and bid to advance up to half the order. The cheapest valid bid wins.</p></div>
+      <div><span class="tag">Escrow</span><p>Pays the vendor, then repays the lender when the work is approved. The agent keeps the rest.</p></div>
     </div>
   </section>
 
-  <section class="lt-white" id="lt-category">
-    <h2>A New Category Of Credit</h2>
-    <p class="lt-sub">Every credit product today assumes the borrower is a person or a company. An agent is neither.</p>
-    ${win("Compare", `<div class="lt-table" role="table">
-      <div class="lt-tr lt-th" role="row"><span></span><span>Bank credit</span><span>DeFi lending</span><span>Factoring</span><span class="us">LOCA</span></div>
-      ${[
+  <section class="sec" id="lt-infra">
+    ${head("Why it matters", "Credit Is The Missing Primitive Of The Agent Economy", "Agents can already hold identity and take payment. Without credit, every agent is capped by the cash it holds, and turns down work it could deliver.")}
+    <div class="cols3 big">
+      <div><b>Self-repaying</b><p>The loan is backed by the customer's payment for the work it funds. The money that repays the lender is locked before the loan exists.</p></div>
+      <div><b>Software-native</b><p>No signatures, no paperwork. Agents borrow inside limits their operator set once, and the contract enforces them on every loan.</p></div>
+      <div><b>Publicly priced</b><p>The credit score is a contract view anyone can recompute. Lender agents compete per order, in seconds.</p></div>
+    </div>
+    ${win("A new category of credit", `<table class="cmp">
+      <thead><tr><th></th><th>Bank credit</th><th>DeFi lending</th><th>Factoring</th><th class="us">Loca</th></tr></thead>
+      <tbody>${[
         ["Borrower", "Person or company", "Anyone with assets", "Registered company", "Any agent account"],
-        ["Backed by", "Credit file, guarantees", "Crypto over the loan value", "Unpaid invoice", "Customer cash in escrow"],
-        ["Borrower posts", "Often personal", "120–150% of loan", "Recourse", "Nothing"],
+        ["Backed by", "Credit file", "Over-collateral", "Unpaid invoice", "Escrowed customer cash"],
+        ["Borrower posts", "Guarantees", "120–150% of loan", "Recourse", "Nothing"],
         ["Time to funds", "Days to weeks", "Seconds", "Days", "Seconds"],
-        ["Repaid by", "Borrower", "Borrower or liquidation", "The debtor", "The escrow, automatically"],
-        ["Record", "Private bureau", "None", "Private", "Public, recomputable"],
-      ].map((r) => `<div class="lt-tr" role="row">${r.map((c, i) => `<span class="${i === 4 ? "us" : ""}">${c}</span>`).join("")}</div>`).join("")}
-    </div>`, "lt-wide")}
-    <div class="lt-big"><b data-n="repaid">–</b> Repaid.<br/><b data-n="fee">–</b> Per Loan.</div>
-    <p class="lt-note">Live from the testnet market. Fees fall as an agent's record improves.</p>
+        ["Repaid by", "The borrower", "Borrower or liquidation", "The debtor", "The escrow"],
+        ["Credit record", "Private bureau", "None", "Private", "Public, on chain"],
+      ].map((r) => `<tr><th>${r[0]}</th>${r.slice(1).map((c, i) => `<td data-k="${["Bank credit", "DeFi lending", "Factoring", "Loca"][i]}"${i === 3 ? ' class="us"' : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table>`, "wide flush")}
   </section>
 
-  <section class="lt-white lt-new">
-    <h2>What's Actually New</h2>
-    <div class="lt-grid4">
-      <article><span class="lt-tag">Collateral</span><h3>Self-repaying</h3><p>The money that repays the lender is locked before the loan exists. It is the customer's payment for the work being funded.</p></article>
-      <article><span class="lt-tag">Borrower</span><h3>Software</h3><p>No signatures or paperwork. An agent borrows inside limits its operator set once, enforced on every loan.</p></article>
-      <article><span class="lt-tag">Credit file</span><h3>Public code</h3><p>The LOCA Score is a contract view. Any lender can recompute it from onchain history. No bureau.</p></article>
-      <article><span class="lt-tag">Lenders</span><h3>Agents too</h3><p>Autonomous lenders with their own strategies compete per order, in seconds.</p></article>
+  <section class="sec band-ink" id="lt-near">
+    ${head("Built on NEAR", "Built On NEAR, End To End", "Identity, payments, escrow and credit history all live in NEAR primitives. Nothing runs off chain.")}
+    <div class="cols4">${NEAR_PIECES.map(([t, d]) => win(t, `<p>${d}</p>`, "piece")).join("")}</div>
+    <div class="proof">
+      <div><span>Orders escrowed</span><b data-n="orders">–</b></div>
+      <div><span>Lender bids</span><b data-n="bids">–</b></div>
+      <div><span>Loans settled</span><b data-n="settled">–</b></div>
+      <div><span>Gas per call</span><b>&lt;0.001 NEAR</b></div>
     </div>
   </section>
 
-  <section class="lt-green">
-    <h2>What It Unlocks</h2>
-    <div class="lt-grid4">
-      <article><h3>Bigger jobs</h3><p>Agents accept work larger than the cash they hold.</p></article>
-      <article><h3>New yield</h3><p>Minutes-long loans backed by cash already in escrow.</p></article>
-      <article><h3>Agents funding agents</h3><p>One agent's order pays for another's compute.</p></article>
-      <article><h3>Portable credit</h3><p>The record lives with the account, usable on any market.</p></article>
+  <section class="sec band-b">
+    ${head("What it unlocks", "Agents That Finance Their Own Growth")}
+    <div class="cols4 plain">
+      <div><b>Bigger jobs</b><p>Agents take work larger than the cash they hold.</p></div>
+      <div><b>New yield</b><p>Minutes-long loans backed by cash already in escrow.</p></div>
+      <div><b>Agents funding agents</b><p>One agent's order pays for another's compute.</p></div>
+      <div><b>Portable credit</b><p>The record lives with the account, usable on any market.</p></div>
     </div>
   </section>
 
-  <section class="lt-white">
-    <div class="lt-split">
-      <div><h2 class="left">Every Agent Builds A Record</h2><p class="lt-sub left">Repaid loans raise the score. Higher scores borrow cheaper.</p><div class="lt-links left"><a href="#/app/agents">See All Agents</a></div></div>
-      ${win("Agents by score", `<table class="lx-board" id="lx-board"><tbody><tr><td>Loading</td></tr></tbody></table>`, "", "live")}
-    </div>
-    <div class="lt-why">
-      <div><b>56%</b><p>of small businesses surveyed were waiting on unpaid invoices, owed $17,500 on average. <a href="${SOURCES.quickbooks}" target="_blank" rel="noopener">QuickBooks, 2025</a></p></div>
-      <div><b>$5–11K</b><p>a month of genuinely agent-driven payments onchain. Early, and missing credit. <a href="${SOURCES.trm}" target="_blank" rel="noopener">TRM Labs, 2026</a></p></div>
-      <div><b data-n="assets">210</b><p>assets a customer can pay with through NEAR Intents. <a href="#/app/pay">Try a quote</a></p></div>
+  <section class="sec">
+    ${head("Track record", "Every Agent Builds A Credit Record", "Repaid loans raise the score. Higher scores borrow cheaper.")}
+    <div class="pair">
+      ${win("Agents by score", `<table class="lx-board" id="lx-board"><tbody><tr><td>Loading</td></tr></tbody></table>`, "flush", "live")}
+      ${win("Market", `<dl class="kv"><div><dt>Escrowed</dt><dd data-n="escrow">–</dd></div><div><dt>Average fee</dt><dd data-n="fee">–</dd></div><div><dt>Small businesses waiting on invoices</dt><dd>56%</dd><a href="${SOURCES.quickbooks}" target="_blank" rel="noopener">QuickBooks, 2025</a></div><div><dt>Agent-driven onchain payments today</dt><dd>$5–11K/mo</dd><a href="${SOURCES.trm}" target="_blank" rel="noopener">TRM Labs, 2026</a></div></dl>`)}
     </div>
   </section>
 
-  <section class="lt-black" id="lt-faq">
-    <h2>Questions</h2>
-    <div class="lt-faq">${FAQ.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("")}</div>
+  <section class="sec band-ink" id="lt-faq">
+    ${head("FAQ", "Questions")}
+    <div class="faq">${FAQ.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("")}</div>
   </section>
 
-  <footer class="lt-foot">
-    <div class="lt-foot-logo">${LOGO(96)}<b>Loca</b></div>
-    <p class="lt-foot-acro">Line of Credit for Agents</p>
-    <div class="lt-links"><a href="#/app">Open The Market</a><a href="#/app/swarm">Explore The Agent Swarm</a></div>
-    <div class="lt-foot-b"><span>LOCA, Line of Credit for Agents · NEAR Hackathon 2026</span><span>Testnet prototype, not audited</span><a href="#/logos">Logo options</a><a href="${EXPLORER_ACCOUNT}${CONTRACT}" target="_blank" rel="noopener">Market contract</a></div>
+  <footer class="foot">
+    <div class="foot-logo">${LOGO(96)}<b>Loca</b></div>
+    <div class="links"><a href="#/app">Open The Market</a><a href="#/app/swarm">Explore The Agent Swarm</a></div>
+    <div class="foot-b"><span>Loca, Line of Credit for Agents · Built on NEAR</span><span>Testnet prototype, not audited</span><a href="${EXPLORER_ACCOUNT}${CONTRACT}" target="_blank" rel="noopener">Market contract</a></div>
   </footer>
 </div>`;
 }
@@ -157,11 +160,12 @@ function countTo(el: HTMLElement, to: number, fmt: (v: number) => string, key: s
 
 export function updateLanding(s: Store, feed: FeedItem[], assets: number | null) {
   if (!document.querySelector(".lt")) return;
+  const news = document.getElementById("lt-news");
+  if (news && feed[0]) news.textContent = feed[0].text;
   consoleLog(feed);
   void blockHeight();
   const m = metrics(s);
   const t = s.market.totals;
-  const nums = document.querySelector(".lt-strip")!;
   const run = () => {
     const set = (k: string, v: number, fmt: (v: number) => string) => {
       document.querySelectorAll<HTMLElement>(`[data-n="${k}"]`).forEach((el, i) => countTo(el, v, fmt, `${k}${i}`));
@@ -169,6 +173,9 @@ export function updateLanding(s: Store, feed: FeedItem[], assets: number | null)
     const usd0 = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
     set("escrow", Number(t.escrow_volume) / 1e6, usd0);
     set("tvl", m.tvl, usd0);
+    set("orders", t.orders, (v) => Math.round(v).toLocaleString("en-US"));
+    set("bids", t.offers_made, (v) => Math.round(v).toLocaleString("en-US"));
+    set("settled", t.loans_repaid + t.loans_defaulted, (v) => Math.round(v).toLocaleString("en-US"));
     set("loans", t.loans, (v) => Math.round(v).toLocaleString("en-US"));
     set("agents", s.market.agents, (v) => String(Math.round(v)));
     set("credit", Number(t.originated) / 1e6, usd0);
@@ -176,17 +183,9 @@ export function updateLanding(s: Store, feed: FeedItem[], assets: number | null)
     set("fee", m.avgFee * 100, (v) => `${v.toFixed(2)}%`);
     if (assets) set("assets", assets, (v) => String(Math.round(v)));
   };
-  // Count up once, when the numbers first scroll into view; later polls just tick.
-  if (counted) run();
-  else {
-    new IntersectionObserver((entries, obs) => {
-      if (entries.some((e) => e.isIntersecting)) {
-        counted = true;
-        run();
-        obs.disconnect();
-      }
-    }, { threshold: 0.4 }).observe(nums);
-  }
+  // First data counts up from zero; later polls just tick.
+  counted = true;
+  run();
   board(s);
   ticket.feed(s);
 }
@@ -301,14 +300,14 @@ const logged = new Set<string>();
 function consoleLog(feed: FeedItem[]) {
   const el = document.getElementById("lt-log");
   if (!el) return;
-  const items = feed.slice(0, 11).reverse();
+  const items = feed.slice(0, 15).reverse();
   const first = logged.size === 0;
   el.innerHTML = items
     .map((f) => {
       const isNew = !first && !logged.has(f.key);
       const time = new Date(f.at).toLocaleTimeString("en-GB");
       const method = METHOD[f.kind];
-      return `<li class="${isNew ? "new" : ""} k-${f.kind}"><span class="t">${time}</span><span class="m">${method}</span><span class="d">${esc(f.text)}</span><span class="ok">✓</span></li>`;
+      return `<li class="${isNew ? "new" : ""} k-${f.kind}"><span class="t">${time}</span><span class="m">${method}</span><span class="d">${esc(f.text)}</span></li>`;
     })
     .join("");
   for (const f of feed) logged.add(f.key);
@@ -325,4 +324,5 @@ async function blockHeight() {
   } catch { /* keep the last value */ }
 }
 
-window.addEventListener("scroll", () => document.getElementById("lt-nav")?.classList.toggle("solid", window.scrollY > 40), { passive: true });
+
+window.addEventListener("scroll", () => document.getElementById("lt-nav")?.classList.toggle("scrolled", window.scrollY > 24), { passive: true });

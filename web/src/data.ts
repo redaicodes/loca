@@ -59,12 +59,32 @@ export const DEMO_RUN = demoRun as unknown as { steps: { act: string; title: str
 // ---------------------------------------------------------------- RPC
 
 // Free public endpoints rate-limit, so reads rotate across several.
-const RPCS = ["https://rpc.testnet.fastnear.com", "https://near-testnet.drpc.org", "https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"];
+const RPCS = ["https://rpc.testnet.fastnear.com", "https://near-testnet.drpc.org", "https://test.rpc.fastnear.com", "https://archival-rpc.testnet.fastnear.com", "https://rpc.testnet.near.org"];
 let rr = 0;
 
-async function rpc(method: string, params: object) {
+// Free endpoints throttle bursts, so at most three requests are in flight at once.
+let active = 0;
+const waiting: (() => void)[] = [];
+async function slot<T>(fn: () => Promise<T>): Promise<T> {
+  if (active >= 3) await new Promise<void>((r) => waiting.push(r));
+  active++;
+  try {
+    return await fn();
+  } finally {
+    active--;
+    waiting.shift()?.();
+  }
+}
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function rpc(method: string, params: object) {
+  return slot(() => rpcOnce(method, params));
+}
+
+async function rpcOnce(method: string, params: object) {
   let last: unknown;
-  for (let i = 0; i < RPCS.length; i++) {
+  for (let i = 0; i < RPCS.length * 2; i++) {
+    if (i >= RPCS.length) await pause(400 * (i - RPCS.length + 1));
     const url = RPCS[rr++ % RPCS.length];
     try {
       const res = await fetch(url, {
@@ -125,7 +145,7 @@ export async function loadStore(prev?: Store): Promise<Store> {
     prev ? Promise.resolve(prev.config) : view<Config>("get_config"),
     view<{ agent: Agent; score: ScoreReport }[]>("get_agents", { from_index: 0, limit: 100 }),
   ]);
-  const depth = prev ? 80 : 400;
+  const depth = prev ? 60 : 200;
   const [orders, offers, loans] = await Promise.all([
     range<Order>("get_orders", Math.max(0, market.next_order_id - depth), market.next_order_id),
     range<Offer>("get_offer_list", Math.max(0, market.next_offer_id - depth * 2), market.next_offer_id),
