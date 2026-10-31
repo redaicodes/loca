@@ -2,7 +2,7 @@ import "./style.css";
 import "./landing.css";
 import "./app-theme.css";
 import { listTokens } from "../../src/intents/oneclick";
-import { CONTRACT, deriveFeed, latestBlock, loadStore, type FeedItem, type Store } from "./data";
+import { CONTRACT, accessKeys, deriveFeed, latestBlock, loadStore, view as viewCall, type FeedItem, type KeyInfo, type Store } from "./data";
 import { landing, resetLanding, updateLanding } from "./landing";
 import { logosPage } from "./logos";
 import { activity, agentDetail, agents, dashboard, lenders, market, orderDetail, orders } from "./pages";
@@ -132,6 +132,29 @@ function route(refresh = false, fresh = new Set<string>()) {
   const y = window.scrollY;
   view.innerHTML = html;
   window.scrollTo(0, refresh && same ? y : 0);
+  void fillAgentKeys();
+}
+
+// An agent's NEAR access keys and prepaid storage, read live; cached briefly across refreshes.
+const keyCache = new Map<string, { at: number; html: string }>();
+async function fillAgentKeys() {
+  const el = document.querySelector<HTMLElement>("#agent-keys");
+  if (!el) return;
+  const id = el.dataset.agent!;
+  const hit = keyCache.get(id);
+  if (hit && Date.now() - hit.at < 60_000) return void (el.innerHTML = hit.html);
+  try {
+    const [keys, storage] = await Promise.all([accessKeys(id), viewCall<string>("storage_balance_of", { account_id: id })]);
+    const fc = keys.filter((k) => !k.full), full = keys.length - fc.length;
+    const near = (y: string | null | undefined) => (y == null ? "unlimited" : `${(Number(BigInt(y) / 10n ** 18n) / 1e6).toFixed(3)} NEAR`);
+    const row = (k: KeyInfo) => `<div class="key-row"><span class="pill s-open">function-call</span> <span class="mono small">${esc(k.publicKey.slice(0, 16))}…</span><div class="muted small">only ${esc(k.methods!.join(", "))} on ${esc(label(k.receiver!))} · gas allowance ${near(k.allowance)} · can't attach NEAR or touch tokens</div></div>`;
+    const html = `${fc.map(row).join("") || '<div class="muted small">No restricted key: the agent signs with a full-access key.</div>'}
+      <div class="muted small" style="margin-top:6px">${full} full-access key${full === 1 ? "" : "s"}, held by the operator · storage prepaid ${near(storage)}</div>`;
+    keyCache.set(id, { at: Date.now(), html });
+    if (document.body.contains(el)) el.innerHTML = html;
+  } catch {
+    el.innerHTML = '<span class="muted small">Couldn\'t read keys from RPC</span>';
+  }
 }
 
 async function poll() {

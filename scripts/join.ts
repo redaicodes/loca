@@ -6,7 +6,7 @@
 // loop of them for `lender run`), signed by the account in LOCA_ACCOUNT_ID. Testnet only.
 
 import "dotenv/config";
-import { Account, FailoverRpcProvider, JsonRpcProvider, type KeyPairString } from "near-api-js";
+import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPair, type KeyPairString, nearToYocto } from "near-api-js";
 import { STRATEGIES } from "../src/agents/lenders.js";
 import { sha256 } from "../src/agents/research.js";
 import { call, ContractError } from "../src/lib/near.js";
@@ -26,9 +26,11 @@ customer account). Optional: LOCA_CONTRACT (default ${CONTRACT}).
 Anyone
   status [account]                         roles, balances and score for an account
   faucet [--amount 500]                    register with test USDC and mint yourself some
+  storage [--amount 0.1]                   prepay market storage (agents and lenders)
 
 Agent (the account that borrows and delivers work)
-  agent register --operator <id> --name "My Agent" --service "what it sells"
+  agent register --operator <id> --name "My Agent" --service "what it sells"   (attaches 0.1 NEAR storage)
+  agent issue-key [--allowance 1]          add a key limited to the agent methods; run the agent on it
   agent request --order <id> --amount 30 --vendor <id> --max-fee 3 [--minutes 10]
   agent accept --offer <id>                take a lender's bid; the vendor is paid
   agent deliver --order <id> --deliverable <file or text>
@@ -76,14 +78,26 @@ const view = <T>(method: string, args: Record<string, unknown> = {}, contract = 
 const config = () => view<Config>("get_config");
 const nowNs = () => BigInt(Date.now()) * 1_000_000n;
 
-async function tx(method: string, args: Record<string, unknown>, opts: { contract?: string; deposit?: bigint } = {}) {
-  const r = await call(me(), opts.contract ?? CONTRACT, method, args, opts.deposit ?? 0n);
+// Restricted (function-call) keys cannot attach NEAR and should not reserve 150 TGas per call.
+const AGENT_METHODS = ["request_credit", "accept_offer", "mark_delivered", "withdraw", "update_profile"];
+const AGENT_GAS = 30_000_000_000_000n;
+
+async function tx(method: string, args: Record<string, unknown>, opts: { contract?: string; deposit?: bigint; gas?: bigint } = {}) {
+  const r = await call(me(), opts.contract ?? CONTRACT, method, args, opts.deposit ?? 0n, opts.gas);
   const rejected = r.events.find((e) => e.event === "deposit_rejected");
   if (rejected) console.log(`Refused: ${rejected.data.reason}. The deposit was credited back to ${rejected.data.beneficiary}; run "withdraw" to pull it.`);
   for (const e of r.events) if (e.event !== "deposit_rejected") console.log(`  ${e.event} ${JSON.stringify(e.data)}`);
   console.log(`  tx https://testnet.nearblocks.io/txns/${r.hash}`);
   return r;
 }
+/** Prepay market storage if the balance is low. Agents pay for orders and loans, lenders for bids. */
+async function ensureStorage(min = "0.02", top = "0.1") {
+  const bal = BigInt(await view<string>("storage_balance_of", { account_id: me().accountId }));
+  if (bal >= nearToYocto(min as `${number}`)) return;
+  console.log(`Prepaying ${top} NEAR of market storage (orders, bids and loans are charged a few thousandths each).`);
+  await tx("storage_deposit", {}, { deposit: nearToYocto(top as `${number}`) });
+}
+
 async function ftCall(amount: bigint, msg: unknown) {
   const { token_id } = await config();
   return tx("ft_transfer_call", { receiver_id: CONTRACT, amount: amount.toString(), msg: JSON.stringify(msg) }, { contract: token_id, deposit: 1n });
@@ -101,6 +115,8 @@ async function status(id: string) {
   const operates = agents.filter((a) => a.agent.operator_id === id).map((a) => a.agent.agent_id);
   console.log(`Account   ${id}\nMarket    ${CONTRACT}`);
   console.log(`USDC      ${fmtUsd(BigInt(usdc))} in wallet, ${fmtUsd(BigInt(claimable))} claimable in the market`);
+  const storage = BigInt(await view<string>("storage_balance_of", { account_id: id }));
+  console.log(`Storage   ${(Number(storage / 10n ** 18n) / 1e6).toFixed(4)} NEAR prepaid`);
   if (agent) {
     console.log(`Agent     registered, operator ${agent.operator_id}, score ${score?.score} (${score?.rated ? "rated" : "unrated"})`);
     console.log(`          policy v${agent.policy_version}: max ${fmtUsd(BigInt(agent.policy.max_principal))}, vendors ${agent.policy.allowed_vendors.join(", ") || "none"}`);
@@ -145,6 +161,7 @@ async function lenderRun() {
         const d = strategy.decide({ order: o, request: req, agent, score, exposureToAgent: exposure });
         if (!d.bid) { console.log(`#${o.id}: no bid (${d.rationale.join("; ")})`); continue; }
         const expires = BigInt(req.expires_at) - 5n * SEC;
+        await ensureStorage();
         console.log(`#${o.id}: bidding ${fmtUsd(d.fee)} on ${fmtUsd(BigInt(req.amount))} for ${o.agent_id} (${d.rationale.join("; ")})`);
         await ftCall(BigInt(req.amount), { MakeOffer: { order_id: o.id, fee: d.fee.toString(), expires_at: expires.toString(), strategy: strategy.id } });
       }
@@ -164,7 +181,8 @@ async function main() {
 
     case "agent register": {
       const profile = { name: flag("name"), service: flag("service", "") };
-      await tx("register_agent", { operator_id: flag("operator"), profile_hash: sha256(JSON.stringify(profile)) });
+      // 0.01 NEAR pays for the agent record; the rest prepays its first orders and loans.
+      await tx("register_agent", { operator_id: flag("operator"), profile_hash: sha256(JSON.stringify(profile)) }, { deposit: nearToYocto("0.1") });
       return console.log(`Registered. Profile hash commits to ${JSON.stringify(profile)}. Next: your operator sets a spend policy.`);
     }
     case "agent request": {
@@ -172,23 +190,39 @@ async function main() {
       await tx("request_credit", {
         order_id: Number(flag("order")), amount: usd(Number(flag("amount"))).toString(), vendor_id: flag("vendor"),
         max_fee: usd(Number(flag("max-fee"))).toString(), expires_at: (nowNs() + minutes * 60n * SEC).toString(),
-      });
+      }, { gas: AGENT_GAS });
       const offers = await view<Offer[]>("get_offers", { order_id: Number(flag("order")) });
       return console.log(`Requested. Bids so far: ${offers.length}. Accept one with "agent accept --offer <id>".`);
     }
-    case "agent accept": return void (await tx("accept_offer", { offer_id: Number(flag("offer")) }));
+    case "agent accept": return void (await tx("accept_offer", { offer_id: Number(flag("offer")) }, { gas: AGENT_GAS }));
+    case "agent issue-key": {
+      // Run with the agent account's full-access key. Prints a key the agent process should use instead.
+      const kp = KeyPair.fromRandom("ed25519");
+      await me().addFunctionCallAccessKey({ publicKey: kp.getPublicKey().toString(), contractId: CONTRACT, methodNames: AGENT_METHODS, allowance: nearToYocto(flag("allowance", "1") as `${number}`) });
+      console.log(`Added a function-call key to ${me().accountId}. It can call only ${AGENT_METHODS.join(", ")} on ${CONTRACT},`);
+      console.log(`cannot attach NEAR and cannot touch tokens. Give the agent process this key and keep the full-access key offline:\n`);
+      return console.log(`LOCA_PRIVATE_KEY=${kp.toString()}`);
+    }
+    case "storage": return void (await tx("storage_deposit", {}, { deposit: nearToYocto(flag("amount", "0.1") as `${number}`) }));
     case "agent deliver": {
       const d = flag("deliverable");
       const { existsSync, readFileSync } = await import("node:fs");
       const body = existsSync(d) ? readFileSync(d, "utf8") : d;
-      return void (await tx("mark_delivered", { order_id: Number(flag("order")), deliverable_hash: sha256(body) }));
+      return void (await tx("mark_delivered", { order_id: Number(flag("order")), deliverable_hash: sha256(body) }, { gas: AGENT_GAS }));
     }
     case "agent withdraw": case "lender withdraw": case "customer withdraw": case "withdraw": {
       // A token transfer to an unregistered account bounces (the contract keeps the balance owed).
       const { token_id } = await config();
       const reg = await view<unknown>("storage_balance_of", { account_id: me().accountId }, token_id).catch(() => null);
-      if (!reg) await tx("register", { account_ids: [me().accountId] }, { contract: token_id });
-      const r = await tx("withdraw", {});
+      if (!reg) {
+        try {
+          await tx("register", { account_ids: [me().accountId] }, { contract: token_id });
+        } catch {
+          // A restricted agent key can't call the token contract.
+          throw new Error(`${me().accountId} isn't registered with the token yet, and this key can't register it. Ask your operator to run "pnpm join faucet" once with the account's full-access key.`);
+        }
+      }
+      const r = await tx("withdraw", {}, { gas: 60_000_000_000_000n });
       if (r.events.some((e) => e.event === "withdraw_failed")) console.log("Withdraw failed and your balance was restored. Is your account registered with the token?");
       return;
     }
@@ -203,6 +237,7 @@ async function main() {
       const order = await view<Order>("get_order", { order_id: Number(flag("order")) });
       if (!order?.credit_request) throw new Error("That order has no open credit request.");
       const expires = nowNs() + BigInt(flag("minutes", "5")) * 60n * SEC;
+      await ensureStorage();
       const r = await ftCall(BigInt(order.credit_request.amount), {
         MakeOffer: { order_id: order.id, fee: usd(Number(flag("fee"))).toString(), expires_at: expires.toString(), strategy: flag("strategy", "manual") },
       });

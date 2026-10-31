@@ -83,6 +83,15 @@ escrow   ──waterfall──▶ lender principal + fee │ bond covers shortfa
 - **Swarm** ([scripts/swarm.ts](scripts/swarm.ts)): the multi-agent economy described above.
 - **Research agent** ([research.ts](src/agents/research.ts)): buys data from the vendor and writes the report, using NEAR AI Cloud when `NEAR_AI_API_KEY` is set and an offline writer otherwise.
 
+## Guardrails, tested live
+
+`pnpm guardrails` attacks the live market from its own accounts and records what stops each attempt in [docs/guardrails.json](docs/guardrails.json); the app's Credit auctions page lists them with transaction links. Last run: 16 of 16 refused.
+
+- **Refused by the contract (13):** operator paying its own agent, dust orders, orders or bids without prepaid storage, advances over 50%, loans routed to the operator or to an unapproved vendor, a customer lending against its own order, fees above the agent's cap, a second loan on one order, pulling the bond during a loan, early cancellation, early release.
+- **Refused by NEAR before execution (3):** each agent signs with a function-call key limited to `request_credit`, `accept_offer`, `mark_delivered`, `withdraw` and `update_profile` on the market. Moving tokens, calling admin methods or attaching NEAR are rejected by the protocol.
+
+Storage: agents prepay storage for the orders and loans they receive and lenders for their bids (NEP-145 style `storage_deposit`), at flat prices above the measured record sizes, so spam can't drain the market account. Orders under 1 USDC are refused.
+
 ## Threat model (summary)
 
 | Threat | Handling |

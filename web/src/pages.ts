@@ -1,4 +1,4 @@
-import { CAST, CONTRACT, DEMO_RUN, type FeedItem, type Loan, type Offer, type Order, type ScoreReport, type Store } from "./data";
+import { CAST, CONTRACT, GUARDRAILS, type FeedItem, type Loan, type Offer, type Order, type ScoreReport, type Store } from "./data";
 import { REASON_TEXT, SCORE_LABELS, STRATEGY, ICON, acct, accountLink, agentService, ago, bps, empty, esc, fmtDate, label, pct, pill, strategyName, txLink, usd } from "./ui";
 
 const enc = encodeURIComponent;
@@ -331,6 +331,7 @@ export function agentDetail(s: Store, id: string) {
       <dt>Spend policy</dt><dd>v${agent.policy_version} · max <b class="mono">${usd(agent.policy.max_principal)}</b> per loan</dd>
       <dt>Allowed vendors</dt><dd>${agent.policy.allowed_vendors.map((v) => acct(v)).join("") || '<span class="muted">–</span>'}</dd>
       <dt>Loan proceeds</dt><dd>Paid to the vendor, never to the agent</dd>
+      <dt>Keys</dt><dd id="agent-keys" data-agent="${esc(id)}"><span class="muted small">Reading NEAR access keys…</span></dd>
       <dt>Profile hash</dt><dd class="mono hash">${esc(agent.profile_hash)}</dd>
     </dl>`, { cls: "span-5" })}
   </div>
@@ -400,7 +401,6 @@ export function orderDetail(s: Store, id: number) {
 export function market(s: Store) {
   const open = sorted(s.orders).filter((o) => o.credit_request && o.loan_id === null && o.status === "Funded" && !pastDeadline(o));
   const auctions = sorted(s.orders).filter((o) => o.offer_ids.length).slice(0, 6);
-  const blocked = DEMO_RUN.steps.filter((x) => x.act === "05");
   const c = s.config;
   return `${head("Credit market", "Agents request advances against escrowed orders. Lender agents compete with fully funded bids, and the agent takes the cheapest valid one.")}
   <div class="kpis">
@@ -426,11 +426,20 @@ export function market(s: Store) {
       });
     })
     .join("")}</div>
-  <h3 class="sec">Guardrails</h3>
-  <div class="grid g-12">${blocked
-    .map((b) => `<section class="card span-4 guard"><div class="card-b"><div class="g-ico">${ICON.shield}</div><div class="g-t">${esc(b.title.replace(/^Blocked: /, "").replace(/ \(.*\)$/, "").replace(/^./, (m) => m.toUpperCase()))}</div><div class="code bad">${esc(b.error)}</div></div><div class="card-f">Refused on testnet ${txLink(b.tx)}</div></section>`)
-    .join("")}</div>
-  <p class="muted small">Guardrail transactions are from the first demo deployment (${esc(DEMO_RUN.contracts.loca)}). The same checks run in this contract and in its unit tests.</p>`;
+  ${guardrails()}`;
+}
+
+export function guardrails() {
+  const g = GUARDRAILS;
+  const ok = g.cases.filter((c) => c.passed).length;
+  const group = (layer: "contract" | "runtime", title: string, note: string) => card(title, `<p class="muted small" style="margin:0 0 12px">${note}</p><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Attempt</th><th>By</th><th>Refused with</th><th>Proof</th></tr></thead><tbody>${g.cases
+    .filter((c) => c.layer === layer)
+    .map((c) => `<tr><td><b>${esc(c.title)}</b><div class="muted small">${esc(c.attempt)}</div></td><td>${esc(c.actor)}</td><td><span class="code ${c.passed ? "bad" : ""}">${esc(c.got)}</span></td><td>${c.tx ? txLink(c.tx) : '<span class="muted small">rejected before execution</span>'}</td></tr>`)
+    .join("")}</tbody></table></div>`);
+  return `<h3 class="sec">Guardrails <span class="count">${ok}/${g.cases.length} attacks refused</span></h3>
+  ${group("contract", "Refused by the Loca contract", "The transaction ran and the contract refused it, or credited the deposit back. Each one is a real testnet transaction.")}
+  ${group("runtime", "Refused by NEAR, before the contract runs", "The agent signs with a function-call key limited to five market methods. NEAR rejects anything else, so there is no transaction to link.")}
+  <p class="muted small">Recorded by <code>pnpm guardrails</code> against ${esc(g.contract)} on ${new Date(g.ranAt).toUTCString()}.</p>`;
 }
 
 export function lenders(s: Store) {

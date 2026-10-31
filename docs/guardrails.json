@@ -1,0 +1,167 @@
+{
+  "contract": "market.loca-swarm-mvwu8dfo.testnet",
+  "ranAt": "2026-10-31T21:55:47.364Z",
+  "orderId": 603,
+  "cases": [
+    {
+      "title": "Operator pays its own agent",
+      "actor": "operator",
+      "attempt": "fund an order for the agent it operates, to fake revenue",
+      "layer": "contract",
+      "expected": "ERR_CUSTOMER_RELATED_PARTY",
+      "got": "ERR_CUSTOMER_RELATED_PARTY",
+      "tx": "B9skGX8FjVVkbmNcTxejaNt4xUQGD7tQfr6LAhEhQfLN",
+      "passed": true
+    },
+    {
+      "title": "Dust order",
+      "actor": "customer",
+      "attempt": "fund a $0.50 order to bloat contract state",
+      "layer": "contract",
+      "expected": "ERR_ORDER_TOO_SMALL",
+      "got": "ERR_ORDER_TOO_SMALL",
+      "tx": "9hjxm66Da8nBrQRb5iYwEaTZCray3P6yARA58Lph5356",
+      "passed": true
+    },
+    {
+      "title": "Order for an agent with no prepaid storage",
+      "actor": "customer",
+      "attempt": "make the market pay for a new order's storage",
+      "layer": "contract",
+      "expected": "ERR_STORAGE_DEPOSIT_REQUIRED",
+      "got": "ERR_STORAGE_DEPOSIT_REQUIRED",
+      "tx": "3ei7C1kKB6nC3PHX8PEdzUDGGZb7oxTrqbYSecRs6UAw",
+      "passed": true
+    },
+    {
+      "title": "Advance above 50% of the order",
+      "actor": "agent",
+      "attempt": "borrow $60 against a $100 order",
+      "layer": "contract",
+      "expected": "ERR_EXCEEDS_ADVANCE_RATE",
+      "got": "ERR_EXCEEDS_ADVANCE_RATE",
+      "tx": "3suk7tMrgsyvkYt3YKGAhyXx9FsTxHh8tv5bDGib3tNE",
+      "passed": true
+    },
+    {
+      "title": "Loan routed to the operator",
+      "actor": "agent",
+      "attempt": "send the borrowed money to its own operator",
+      "layer": "contract",
+      "expected": "ERR_VENDOR_NOT_IN_POLICY",
+      "got": "ERR_VENDOR_NOT_IN_POLICY",
+      "tx": "GnEboZvhbcdHFitbEyDbm2wnijAFCLh5VLPCe9VKevWR",
+      "passed": true
+    },
+    {
+      "title": "Loan to a vendor the protocol hasn't approved",
+      "actor": "agent",
+      "attempt": "pay a vendor the operator listed but the market never approved",
+      "layer": "contract",
+      "expected": "ERR_VENDOR_NOT_APPROVED",
+      "got": "ERR_VENDOR_NOT_APPROVED",
+      "tx": "D1CKgHs2YyCrEeUE6Z5VRBUtLNDwSCBhxbspDWAbsFKW",
+      "passed": true
+    },
+    {
+      "title": "Customer lends against its own order",
+      "actor": "customer",
+      "attempt": "bid on the order it paid for",
+      "layer": "contract",
+      "expected": "ERR_LENDER_RELATED_PARTY",
+      "got": "ERR_LENDER_RELATED_PARTY",
+      "tx": "fnJFoNsXqAAH9ZbMJsuBGvbKW3hCX4q5sBWoxbaVkeL",
+      "passed": true
+    },
+    {
+      "title": "Lender bids without prepaid storage",
+      "actor": "lender",
+      "attempt": "make the market pay for the bid's storage",
+      "layer": "contract",
+      "expected": "ERR_STORAGE_DEPOSIT_REQUIRED",
+      "got": "ERR_STORAGE_DEPOSIT_REQUIRED",
+      "tx": "5aviapnaET5mrRvyiDuQ3ukXA9ZBxXF2eeEc6jEDgMfh",
+      "passed": true
+    },
+    {
+      "title": "Fee above the agent's maximum",
+      "actor": "lender",
+      "attempt": "bid $5 when the agent capped fees at $3",
+      "layer": "contract",
+      "expected": "ERR_FEE_TOO_HIGH",
+      "got": "ERR_FEE_TOO_HIGH",
+      "tx": "DP9eXBWNzPFRfa67GWa3LH3MjJ6AaRVuipjU4vtQyGuK",
+      "passed": true
+    },
+    {
+      "title": "Second loan on the same order",
+      "actor": "lender",
+      "attempt": "lend against an order that already backs a loan",
+      "layer": "contract",
+      "expected": "ERR_ORDER_ALREADY_PLEDGED",
+      "got": "ERR_ORDER_ALREADY_PLEDGED",
+      "tx": "CXJa1kuCDVXKSmLGpgd8KPBbBhEA55PN4bcwHKhuYXqV",
+      "passed": true
+    },
+    {
+      "title": "Bond pulled during a loan",
+      "actor": "agent account",
+      "attempt": "withdraw the first-loss bond while a loan is open",
+      "layer": "contract",
+      "expected": "ERR_ACTIVE_LOANS",
+      "got": "ERR_ACTIVE_LOANS",
+      "tx": "C3kMk2BCFvQtZuFzAFuwLoxU7kqfbeGt8wsi9C8xors5",
+      "passed": true
+    },
+    {
+      "title": "Customer cancels before the deadline",
+      "actor": "customer",
+      "attempt": "take the escrow back while the agent is still working",
+      "layer": "contract",
+      "expected": "ERR_BEFORE_DEADLINE",
+      "got": "ERR_BEFORE_DEADLINE",
+      "tx": "GsoV56X9vUP1Wo8bw4F1ATd28LT7H4jPyGdLUnTtULX1",
+      "passed": true
+    },
+    {
+      "title": "Early release",
+      "actor": "anyone",
+      "attempt": "release the escrow before the customer's dispute window closes",
+      "layer": "contract",
+      "expected": "ERR_DISPUTE_WINDOW_OPEN",
+      "got": "ERR_DISPUTE_WINDOW_OPEN",
+      "tx": "5Av7Qwncw5Y6XfEwiTkQxKhWYtSZF522sc8guWkqtCmC",
+      "passed": true
+    },
+    {
+      "title": "Agent key moves tokens",
+      "actor": "agent key",
+      "attempt": "transfer USDC straight out of the agent's wallet",
+      "layer": "runtime",
+      "expected": "ReceiverMismatch",
+      "got": "ReceiverMismatch",
+      "tx": null,
+      "passed": true
+    },
+    {
+      "title": "Agent key calls an admin method",
+      "actor": "agent key",
+      "attempt": "approve its own vendor on the market",
+      "layer": "runtime",
+      "expected": "MethodNameMismatch",
+      "got": "MethodNameMismatch",
+      "tx": null,
+      "passed": true
+    },
+    {
+      "title": "Agent key attaches money",
+      "actor": "agent key",
+      "attempt": "attach NEAR to a call",
+      "layer": "runtime",
+      "expected": "DepositWithFunctionCall",
+      "got": "DepositWithFunctionCall",
+      "tx": null,
+      "passed": true
+    }
+  ]
+}

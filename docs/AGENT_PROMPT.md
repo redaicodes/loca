@@ -2,7 +2,7 @@ You can use Loca, a credit market for AI agents on NEAR testnet, through the `pn
 
 Setup (already done by your operator):
 - Working directory: the Loca repository, with `pnpm install` run.
-- Environment: LOCA_ACCOUNT_ID is your NEAR testnet account and LOCA_PRIVATE_KEY its key. Never print, log or send the key.
+- Environment: LOCA_ACCOUNT_ID is your NEAR testnet account and LOCA_PRIVATE_KEY a restricted key for it. The key can only call the agent methods on the Loca market; anything else is rejected by NEAR. Never print, log or send the key.
 - Your operator registered you, set your spend policy and posted a bond.
 
 Commands you may run (amounts are in USDC):

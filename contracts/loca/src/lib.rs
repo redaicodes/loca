@@ -11,7 +11,7 @@ use near_sdk::serde_json::{json, Value};
 use near_sdk::store::{LookupMap, LookupSet, Vector};
 use near_sdk::{
     env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
-    PromiseError, PromiseOrValue,
+    Promise, PromiseError, PromiseOrValue,
 };
 
 pub mod score;
@@ -41,6 +41,7 @@ enum StorageKey {
     Loans,
     Balances,
     AgentIds,
+    Storage,
 }
 
 #[near(contract_state)]
@@ -65,7 +66,46 @@ pub struct Loca {
     next_loan_id: u64,
     agent_ids: Vector<AccountId>,
     totals: MarketTotals,
+    /// Prepaid NEAR for storage (NEP-145 style). Records are charged a flat price with a margin
+    /// over their measured size, so the market account never pays for state it did not create.
+    storage: LookupMap<AccountId, u128>,
 }
+
+/// Layout before storage accounting, for `migrate`.
+#[near(serializers = [borsh])]
+pub struct LocaV2 {
+    owner_id: AccountId,
+    arbiter_id: AccountId,
+    token_id: AccountId,
+    paused: bool,
+    dispute_window_ns: u64,
+    max_advance_bps: u16,
+    approved_vendors: Vec<AccountId>,
+    agents: LookupMap<AccountId, Agent>,
+    agent_orders: LookupMap<AccountId, Vec<u64>>,
+    customer_pairs: LookupSet<(AccountId, AccountId)>,
+    orders: LookupMap<u64, Order>,
+    offers: LookupMap<u64, Offer>,
+    loans: LookupMap<u64, Loan>,
+    balances: LookupMap<AccountId, u128>,
+    next_order_id: u64,
+    next_offer_id: u64,
+    next_loan_id: u64,
+    agent_ids: Vector<AccountId>,
+    totals: MarketTotals,
+}
+
+const MILLINEAR: u128 = 1_000_000_000_000_000_000_000;
+/// Flat storage prices at 10^19 yoctoNEAR per byte. Measured on a sandbox: an order is 223 bytes when
+/// created and grows to ~420 as it is requested against and delivered (charged 800); a bid is 161
+/// (charged 400); a loan is 283 (charged 500).
+pub const STORAGE_AGENT: u128 = 10 * MILLINEAR;
+pub const STORAGE_ORDER: u128 = 8 * MILLINEAR;
+pub const STORAGE_OFFER: u128 = 4 * MILLINEAR;
+pub const STORAGE_LOAN: u128 = 5 * MILLINEAR;
+/// Smallest order, in token base units (1 USDC at 6 decimals). Stops dust orders.
+pub const MIN_ORDER: u128 = 1_000_000;
+const MAX_POLICY_VENDORS: usize = 10;
 
 fn add(a: &mut U128, v: u128) {
     a.0 += v;
@@ -120,7 +160,63 @@ impl Loca {
             next_loan_id: 0,
             agent_ids: Vector::new(StorageKey::AgentIds),
             totals: MarketTotals::default(),
+            storage: LookupMap::new(StorageKey::Storage),
         }
+    }
+
+    /// One-time upgrade from the layout without storage accounting. Keeps all history.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate() -> Self {
+        let old: LocaV2 = env::state_read().unwrap_or_else(|| env::panic_str("ERR_NO_STATE"));
+        Self {
+            owner_id: old.owner_id,
+            arbiter_id: old.arbiter_id,
+            token_id: old.token_id,
+            paused: old.paused,
+            dispute_window_ns: old.dispute_window_ns,
+            max_advance_bps: old.max_advance_bps,
+            approved_vendors: old.approved_vendors,
+            agents: old.agents,
+            agent_orders: old.agent_orders,
+            customer_pairs: old.customer_pairs,
+            orders: old.orders,
+            offers: old.offers,
+            loans: old.loans,
+            balances: old.balances,
+            next_order_id: old.next_order_id,
+            next_offer_id: old.next_offer_id,
+            next_loan_id: old.next_loan_id,
+            agent_ids: old.agent_ids,
+            totals: old.totals,
+            storage: LookupMap::new(StorageKey::Storage),
+        }
+    }
+
+    // ---------- storage ----------
+
+    /// Prepay storage for `account_id` (default: the caller). Agents pay for the orders and loans
+    /// they receive; lenders pay for their bids.
+    #[payable]
+    pub fn storage_deposit(&mut self, account_id: Option<AccountId>) -> U128 {
+        let id = account_id.unwrap_or_else(env::predecessor_account_id);
+        let bal = self.storage.get(&id).copied().unwrap_or(0) + env::attached_deposit().as_yoctonear();
+        self.storage.insert(id.clone(), bal);
+        emit("storage_deposit", json!({ "account_id": id, "balance": U128(bal) }));
+        U128(bal)
+    }
+
+    pub fn storage_withdraw(&mut self, amount: Option<U128>) -> Promise {
+        let id = env::predecessor_account_id();
+        let bal = self.storage.get(&id).copied().unwrap_or(0);
+        let amount = amount.map(|a| a.0).unwrap_or(bal);
+        require!(amount > 0 && amount <= bal, "ERR_STORAGE_AMOUNT");
+        self.storage.insert(id.clone(), bal - amount);
+        Promise::new(id).transfer(NearToken::from_yoctonear(amount))
+    }
+
+    pub fn storage_balance_of(&self, account_id: AccountId) -> U128 {
+        U128(self.storage.get(&account_id).copied().unwrap_or(0))
     }
 
     // ---------- admin ----------
@@ -156,10 +252,20 @@ impl Loca {
     // ---------- identity ----------
 
     /// Called by the agent account. The operator is the human or org accountable for it.
+    /// Attach at least 0.01 NEAR (or prepay with `storage_deposit`); the rest stays as the
+    /// agent's storage balance for future orders and loans.
+    #[payable]
     pub fn register_agent(&mut self, operator_id: AccountId, profile_hash: String) {
         let agent_id = env::predecessor_account_id();
         require!(self.agents.get(&agent_id).is_none(), "ERR_ALREADY_REGISTERED");
         require!(operator_id != agent_id, "ERR_OPERATOR_IS_AGENT");
+        require!(profile_hash.len() <= 128, "ERR_PROFILE_HASH_TOO_LONG");
+        let deposit = env::attached_deposit().as_yoctonear();
+        if deposit > 0 {
+            let bal = self.storage.get(&agent_id).copied().unwrap_or(0) + deposit;
+            self.storage.insert(agent_id.clone(), bal);
+        }
+        self.charge_storage(&agent_id, STORAGE_AGENT).unwrap_or_else(|e| env::panic_str(e));
         let agent = Agent {
             agent_id: agent_id.clone(),
             operator_id: operator_id.clone(),
@@ -190,6 +296,7 @@ impl Loca {
     pub fn set_spend_policy(&mut self, agent_id: AccountId, allowed_vendors: Vec<AccountId>, max_principal: U128) {
         let mut agent = self.agent(&agent_id);
         require!(env::predecessor_account_id() == agent.operator_id, "ERR_NOT_OPERATOR");
+        require!(allowed_vendors.len() <= MAX_POLICY_VENDORS, "ERR_TOO_MANY_VENDORS");
         for v in &allowed_vendors {
             require!(v != &agent.agent_id && v != &agent.operator_id, "ERR_VENDOR_RELATED_PARTY");
         }
@@ -247,6 +354,7 @@ impl Loca {
         self.assert_vendor_allowed(&agent, &req.vendor_id);
         require!(offer.principal.0 <= agent.policy.max_principal.0, "ERR_EXCEEDS_POLICY");
 
+        self.charge_storage(&order.agent_id, STORAGE_LOAN).unwrap_or_else(|e| env::panic_str(e));
         let loan_id = self.next_loan_id;
         self.next_loan_id += 1;
         let loan = Loan {
@@ -306,6 +414,7 @@ impl Loca {
         let mut order = self.order(order_id);
         require!(env::predecessor_account_id() == order.agent_id, "ERR_NOT_AGENT");
         require!(order.status == OrderStatus::Funded, "ERR_ORDER_NOT_FUNDED");
+        require!(deliverable_hash.len() <= 128, "ERR_HASH_TOO_LONG");
         order.status = OrderStatus::Delivered;
         order.delivered_at = Some(U64(now()));
         order.deliverable_hash = Some(deliverable_hash.clone());
@@ -566,6 +675,14 @@ impl Loca {
         self.offers.get(&id).cloned().unwrap_or_else(|| env::panic_str("ERR_UNKNOWN_OFFER"))
     }
 
+    /// Deduct a flat storage price from an account's prepaid balance.
+    fn charge_storage(&mut self, payer: &AccountId, price: u128) -> Result<(), &'static str> {
+        let bal = self.storage.get(payer).copied().unwrap_or(0);
+        ensure(bal >= price, "ERR_STORAGE_DEPOSIT_REQUIRED")?;
+        self.storage.insert(payer.clone(), bal - price);
+        Ok(())
+    }
+
     fn credit(&mut self, account_id: &AccountId, amount: u128) {
         if amount == 0 {
             return;
@@ -584,6 +701,10 @@ impl Loca {
         let mut agent = self.agents.get(&agent_id).cloned().ok_or("ERR_UNKNOWN_AGENT")?;
         ensure(customer_id != agent.agent_id && customer_id != agent.operator_id, "ERR_CUSTOMER_RELATED_PARTY")?;
         ensure(deadline > now(), "ERR_BAD_DEADLINE")?;
+        ensure(amount >= MIN_ORDER, "ERR_ORDER_TOO_SMALL")?;
+        ensure(terms_hash.len() <= 128, "ERR_TERMS_HASH_TOO_LONG")?;
+        // The agent pays for the order record; checked last so nothing is charged on a rejection.
+        self.charge_storage(&agent_id, STORAGE_ORDER)?;
         let id = self.next_order_id;
         self.next_order_id += 1;
         let order = Order {
@@ -634,6 +755,8 @@ impl Loca {
             lender_id != agent.agent_id && lender_id != agent.operator_id && lender_id != order.customer_id,
             "ERR_LENDER_RELATED_PARTY",
         )?;
+        ensure(strategy.len() <= 64, "ERR_STRATEGY_TOO_LONG")?;
+        self.charge_storage(&lender_id, STORAGE_OFFER)?;
         let id = self.next_offer_id;
         self.next_offer_id += 1;
         let offer = Offer {

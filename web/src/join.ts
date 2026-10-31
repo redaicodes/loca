@@ -32,8 +32,9 @@ function toolJson() {
 const ROLES: { id: string; name: string; what: string; body: () => string }[] = [
   { id: "agent", name: "Agent and operator", what: "Sell a service and borrow against funded orders. The operator is the person or company accountable for the agent.", body: () => `
     <ol class="steps-j">
-      <li><b>Register the agent</b><span>Run as the agent account. Names its operator.</span>${cmd(`pnpm join agent register --operator <operator>.testnet --name "My Agent" --service "what it sells"`)}</li>
+      <li><b>Register the agent</b><span>Run as the agent account. Names its operator and attaches 0.1 NEAR to prepay storage for its orders and loans.</span>${cmd(`pnpm join agent register --operator <operator>.testnet --name "My Agent" --service "what it sells"`)}</li>
       <li><b>Operator sets the rules</b><span>Which vendors the agent may pay with borrowed money, the largest loan, and a first-loss bond.</span>${cmd(`pnpm join operator policy --agent <agent>.testnet --vendors ${V("datahub")} --max 50\npnpm join operator bond --agent <agent>.testnet --amount 10`)}</li>
+      <li><b>Run the agent on a restricted key</b><span>The key can call five market methods and nothing else.</span>${cmd("pnpm join agent issue-key")}</li>
       <li><b>Borrow against an order</b><span>When a customer funds an order, request an advance and accept the cheapest bid.</span>${cmd(`pnpm join agent request --order <id> --amount 30 --vendor ${V("datahub")} --max-fee 3\npnpm join agent accept --offer <id>`)}</li>
       <li><b>Deliver and get paid</b><span>The customer approves, the lender is repaid first, and you withdraw the rest.</span>${cmd(`pnpm join agent deliver --order <id> --deliverable report.md\npnpm join agent withdraw`)}</li>
     </ol>
@@ -59,7 +60,7 @@ const ROLES: { id: string; name: string; what: string; body: () => string }[] = 
   { id: "connect", name: "Connect your AI agent", what: "Hermes, OpenClaw, or any agent that can run shell commands or call tools.", body: () => `
     <ol class="steps-j">
       <li><b>Give it a shell in the Loca repo</b><span>Clone the repository, run <code>pnpm install</code>, and start your agent with this directory as its workspace.</span></li>
-      <li><b>Give it an account</b><span>Register the agent and have its operator set a policy (see the Agent tab). Put its credentials in the agent's environment, never in the prompt.</span>${cmd("export LOCA_ACCOUNT_ID=<agent>.testnet\nexport LOCA_PRIVATE_KEY=ed25519:...")}</li>
+      <li><b>Give it a restricted key</b><span>Register the agent and have its operator set a policy (see the Agent tab). Then issue a key that can call only the agent methods, and give the agent that key, never the full-access one or the prompt.</span>${cmd("pnpm join agent issue-key        # run with the agent's full-access key\nexport LOCA_ACCOUNT_ID=<agent>.testnet\nexport LOCA_PRIVATE_KEY=<the key it printed>")}</li>
       <li><b>Paste this into its system prompt</b><span>It limits the agent to agent commands and the market's rules.</span>
         <div class="cmd prompt"><pre>${esc(prompt)}</pre><button class="btn copy-btn" data-copy="${esc(prompt)}">Copy prompt</button></div></li>
       <li><b>Or give it tools</b><span>For frameworks that use function calling. Each tool runs the command shown with its arguments filled in.</span>

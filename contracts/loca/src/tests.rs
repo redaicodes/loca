@@ -4,6 +4,7 @@ use near_sdk::testing_env;
 
 const SEC: u64 = 1_000_000_000;
 const T0: u64 = 1_000 * SEC;
+const NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 
 fn usd(x: u128) -> u128 {
     x * 1_000_000
@@ -27,7 +28,10 @@ impl World {
     fn new() -> Self {
         let mut w = World { c: unsafe_init(), t: T0, deposited: 0 };
         w.as_("owner.near").c.add_vendor(acc("vendor.near"));
-        w.as_("agent.near").c.register_agent(acc("operator.near"), "profile-hash".into());
+        w.pay("agent.near", NEAR).c.register_agent(acc("operator.near"), "profile-hash".into());
+        for l in ["lender1.near", "lender2.near", "lender3.near", "customer.near", "customer2.near", "customer3.near"] {
+            w.pay(l, NEAR).c.storage_deposit(None);
+        }
         w.as_("operator.near")
             .c
             .set_spend_policy(acc("agent.near"), vec![acc("vendor.near")], U128(usd(50)));
@@ -39,6 +43,17 @@ impl World {
             .current_account_id(acc("loca.near"))
             .predecessor_account_id(acc(who))
             .block_timestamp(self.t)
+            .build());
+        self
+    }
+
+    /// Call as `who` with NEAR attached.
+    fn pay(&mut self, who: &str, yocto: u128) -> &mut Self {
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(acc("loca.near"))
+            .predecessor_account_id(acc(who))
+            .block_timestamp(self.t)
+            .attached_deposit(NearToken::from_yoctonear(yocto))
             .build());
         self
     }
@@ -429,4 +444,71 @@ fn withdraw_zeroes_balance_before_transfer() {
     w.as_("customer.near").c.approve(o);
     let _ = w.as_("agent.near").c.withdraw();
     assert_eq!(w.bal("agent.near"), 0);
+}
+
+#[test]
+fn agent_pays_storage_for_orders_and_loans() {
+    let mut w = World::new();
+    let before = w.c.storage_balance_of(acc("agent.near")).0;
+    assert_eq!(before, NEAR - STORAGE_AGENT);
+    let order = w.fund_order("customer.near", usd(100));
+    w.request(order, usd(30), usd(3));
+    let lender_before = w.c.storage_balance_of(acc("lender1.near")).0;
+    let o = w.offer("lender1.near", order, usd(30), usd(1));
+    assert_eq!(w.c.storage_balance_of(acc("lender1.near")).0, lender_before - STORAGE_OFFER);
+    w.as_("agent.near").c.accept_offer(o);
+    assert_eq!(w.c.storage_balance_of(acc("agent.near")).0, before - STORAGE_ORDER - STORAGE_LOAN);
+    w.assert_conserved();
+}
+
+#[test]
+fn order_rejected_when_agent_has_no_storage() {
+    let mut w = World::new();
+    w.pay("agent2.near", STORAGE_AGENT).c.register_agent(acc("operator.near"), "p".into());
+    assert_eq!(w.c.storage_balance_of(acc("agent2.near")).0, 0);
+    let id = w.c.next_order_id;
+    let deadline = U64(w.t + 3_600 * SEC);
+    w.ft("customer.near", usd(50), json!({ "FundOrder": { "agent_id": "agent2.near", "terms_hash": "t", "deadline": deadline } }));
+    assert!(w.c.get_order(id).is_none(), "order must not be created");
+    assert_eq!(w.bal("customer.near"), usd(50), "deposit credited back");
+    w.assert_conserved();
+}
+
+#[test]
+fn bid_rejected_when_lender_has_no_storage() {
+    let mut w = World::new();
+    let order = w.fund_order("customer.near", usd(100));
+    w.request(order, usd(30), usd(3));
+    let id = w.c.next_offer_id;
+    let exp = U64(w.t + 300 * SEC);
+    // evil-vendor.near never prepaid storage.
+    w.ft("evil-vendor.near", usd(30), json!({ "MakeOffer": { "order_id": order, "fee": U128(usd(1)), "expires_at": exp, "strategy": "x" } }));
+    assert!(w.c.get_offer(id).is_none());
+    assert_eq!(w.bal("evil-vendor.near"), usd(30));
+    w.assert_conserved();
+}
+
+#[test]
+fn dust_orders_rejected() {
+    let mut w = World::new();
+    let id = w.c.next_order_id;
+    let deadline = U64(w.t + 3_600 * SEC);
+    w.ft("customer.near", 999_999, json!({ "FundOrder": { "agent_id": "agent.near", "terms_hash": "t", "deadline": deadline } }));
+    assert!(w.c.get_order(id).is_none());
+    assert_eq!(w.bal("customer.near"), 999_999);
+}
+
+#[test]
+#[should_panic(expected = "ERR_STORAGE_DEPOSIT_REQUIRED")]
+fn register_requires_storage() {
+    let mut w = World::new();
+    w.as_("agent3.near").c.register_agent(acc("operator.near"), "p".into());
+}
+
+#[test]
+#[should_panic(expected = "ERR_TOO_MANY_VENDORS")]
+fn policy_vendor_list_is_bounded() {
+    let mut w = World::new();
+    let vendors: Vec<AccountId> = (0..11).map(|i| acc(&format!("v{i}.near"))).collect();
+    w.as_("operator.near").c.set_spend_policy(acc("agent.near"), vendors, U128(usd(50)));
 }

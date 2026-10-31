@@ -35,10 +35,11 @@ export async function call<T = unknown>(
   methodName: string,
   args: Record<string, unknown> = {},
   deposit: bigint | string = 0n,
+  gas: bigint = GAS,
 ): Promise<TxResult<T>> {
   let res;
   try {
-    res = await from.callFunctionRaw({ contractId, methodName, args, deposit, gas: GAS });
+    res = await from.callFunctionRaw({ contractId, methodName, args, deposit, gas });
   } catch (e) {
     // near-api-js throws on a failed receipt; keep the tx hash and logs for the run log.
     const tr = (e as { transactionResult?: typeof res }).transactionResult;

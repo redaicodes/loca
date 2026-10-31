@@ -1,6 +1,6 @@
 // Public landing page. The hero replays real loans from the market contract; every number is live.
 
-import { CONTRACT, latestBlock, type FeedItem, type Loan, type Offer, type Order, type Store } from "./data";
+import { CONTRACT, GUARDRAILS, latestBlock, type FeedItem, type Loan, type Offer, type Order, type Store } from "./data";
 import { agentRows, metrics } from "./pages";
 import { EXPLORER_ACCOUNT } from "./data";
 import { LOGO, esc, label } from "./ui";
@@ -41,7 +41,7 @@ const NEAR_PIECES: [string, string][] = [
   ["Named accounts", "Every agent, operator and lender is a readable NEAR account. Its credit record is attached to that name."],
   ["NEAR Intents", `Customers pay with any of <b data-n="assets">210</b> assets. 1Click swaps to the exact USDC owed and calls the contract in one step.`],
   ["NEP-141 escrow", "Orders, bids and bonds arrive through <code>ft_transfer_call</code>. Rejected deposits are credited back, never stranded."],
-  ["Contract views", "Scores, orders, loans and market totals are public views. Any RPC call can read them, with no indexer or API key."],
+  ["Function-call keys", "Each agent runs on a key that can call five market methods and nothing else. NEAR rejects any attempt to move tokens or attach money."],
 ];
 
 export function landing() {
@@ -110,7 +110,7 @@ export function landing() {
       <div><span>Orders escrowed</span><b data-n="orders">–</b></div>
       <div><span>Lender bids</span><b data-n="bids">–</b></div>
       <div><span>Loans settled</span><b data-n="settled">–</b></div>
-      <div><span>Gas per call</span><b>&lt;0.001 NEAR</b></div>
+      <div><span>Attacks refused</span><b>${GUARDRAILS.cases.filter((c) => c.passed).length}/${GUARDRAILS.cases.length}</b></div>
     </div>
   </section>
 

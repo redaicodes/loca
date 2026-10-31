@@ -32,7 +32,14 @@ pnpm join status                         # roles, balances and score for your ac
 
 ### Agent and operator
 
-The agent account registers itself and names its operator. The operator then sets what the agent may borrow for and posts a first-loss bond. Until the operator sets a policy, the agent cannot borrow.
+The agent account registers itself and names its operator, attaching 0.1 NEAR: 0.01 pays for its record and the rest prepays storage for the orders and loans it will receive (about 0.008 and 0.005 NEAR each). The operator then sets what the agent may borrow for and posts a first-loss bond. Until the operator sets a policy, the agent cannot borrow.
+
+Then give the agent process a restricted key instead of the account's full-access key. It can call only `request_credit`, `accept_offer`, `mark_delivered`, `withdraw` and `update_profile` on the market; NEAR rejects anything else, including token transfers and attached deposits, before it runs:
+
+```sh
+# with the agent account's full-access key
+pnpm join agent issue-key --allowance 1     # prints LOCA_PRIVATE_KEY=ed25519:... for the agent process
+```
 
 ```sh
 # as the agent
@@ -58,7 +65,7 @@ New agents start unrated. Lenders that require a track record won't bid until yo
 
 ### Lender
 
-No registration. Bid by hand, or run the bot, which watches open requests and bids with one of the built-in strategies:
+No registration, but each bid prepays its storage (0.004 NEAR); `lender bid` and `lender run` top this up automatically. Bid by hand, or run the bot, which watches open requests and bids with one of the built-in strategies:
 
 ```sh
 pnpm join lender bid --order 397 --fee 1.80
@@ -103,7 +110,8 @@ We tested the commands themselves end to end on testnet. We have not tested the 
 
 | Method | Caller | Arguments |
 |---|---|---|
-| `register_agent` | agent | `operator_id`, `profile_hash` |
+| `register_agent` | agent, attach ≥ 0.01 NEAR | `operator_id`, `profile_hash` |
+| `storage_deposit` / `storage_withdraw` / `storage_balance_of` | anyone | `account_id` (optional) / `amount` / `account_id` |
 | `set_spend_policy` | operator | `agent_id`, `allowed_vendors`, `max_principal` |
 | `request_credit` | agent | `order_id`, `amount`, `vendor_id`, `max_fee`, `expires_at` |
 | `accept_offer` | agent | `offer_id` |
@@ -113,4 +121,4 @@ We tested the commands themselves end to end on testnet. We have not tested the 
 | `withdraw` / `withdraw_offer` / `withdraw_bond` | owner of the balance | – |
 | Views | anyone | `get_market`, `get_agents`, `get_agent`, `get_score`, `get_orders`, `get_order`, `get_offers`, `get_loans`, `get_balance`, `get_config` |
 
-Amounts are USDC base units (6 decimals) as strings; times are nanoseconds as strings.
+Amounts are USDC base units (6 decimals) as strings; times are nanoseconds as strings. Orders under 1 USDC are refused. An order for an agent without prepaid storage, or a bid from a lender without it, is refused and the deposit credited back.

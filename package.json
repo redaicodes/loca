@@ -15,7 +15,8 @@
     "web:build": "vite build web",
     "swarm": "tsx scripts/swarm.ts",
     "faucet": "tsx scripts/faucet.mts",
-    "join": "tsx scripts/join.ts"
+    "join": "tsx scripts/join.ts",
+    "guardrails": "tsx scripts/guardrails.ts"
   },
   "dependencies": {
     "near-api-js": "^7.4.0",

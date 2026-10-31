@@ -99,8 +99,64 @@ function serial<T>(who: string, fn: () => Promise<T>): Promise<T> {
   queues.set(who, next);
   return next;
 }
-const tx = <T>(who: Account, method: string, args: Record<string, unknown>, contract = LOCA, deposit: bigint = 0n): Promise<TxResult<T>> =>
-  serial(who.accountId, () => call<T>(who, contract, method, args, deposit));
+const tx = <T>(who: Account, method: string, args: Record<string, unknown>, contract = LOCA, deposit: bigint = 0n, gas?: bigint): Promise<TxResult<T>> =>
+  serial(who.accountId, () => call<T>(who, contract, method, args, deposit, gas));
+
+// ---------------------------------------------------------------- agent keys
+// Each agent process signs with a function-call access key: it can call only these market methods,
+// cannot attach NEAR, and cannot touch tokens or any other contract. NEAR enforces this before the
+// transaction runs. The operator's full-access key (SWARM_SUBKEY) is used only for setup and upkeep.
+export const AGENT_METHODS = ["request_credit", "accept_offer", "mark_delivered", "withdraw", "update_profile"];
+const AGENT_GAS = 30_000_000_000_000n;
+const WITHDRAW_GAS = 60_000_000_000_000n;
+const KEY_ALLOWANCE = "1";
+const KEYS_FILE = join(ROOT_DIR, "runs/agent-keys.json");
+const agentKeys: Record<string, string> = existsSync(KEYS_FILE) ? JSON.parse(readFileSync(KEYS_FILE, "utf8")) : {};
+const agentSigners = new Map<string, Account>();
+function agentSigner(slug: string): Account {
+  const key = agentKeys[slug];
+  if (!key) return acct(slug);
+  let a = agentSigners.get(slug);
+  if (!a || (a as unknown as { __key?: string }).__key !== key) {
+    a = new Account(id(slug), provider, key as KeyPairString);
+    (a as unknown as { __key?: string }).__key = key;
+    agentSigners.set(slug, a);
+  }
+  return a;
+}
+
+/** Give an agent a fresh restricted key, then remove the old one. */
+async function issueAgentKey(slug: string) {
+  const old = agentKeys[slug];
+  const kp = KeyPair.fromRandom("ed25519");
+  await serial(id(slug), () => acct(slug).addFunctionCallAccessKey({
+    publicKey: kp.getPublicKey().toString(), contractId: LOCA, methodNames: AGENT_METHODS, allowance: nearToYocto(KEY_ALLOWANCE),
+  }));
+  agentKeys[slug] = kp.toString();
+  mkdirSync(dirname(KEYS_FILE), { recursive: true });
+  writeFileSync(KEYS_FILE, JSON.stringify(agentKeys, null, 2));
+  if (old) await serial(id(slug), () => acct(slug).deleteKey(KeyPair.fromString(old as KeyPairString).getPublicKey().toString())).catch(() => {});
+}
+
+async function keyAllowance(slug: string): Promise<bigint | null> {
+  const key = agentKeys[slug];
+  if (!key) return null;
+  try {
+    const v = await rotate((p) => p.viewAccessKey({ accountId: id(slug), publicKey: KeyPair.fromString(key as KeyPairString).getPublicKey().toString() }));
+    const perm = v.permission as unknown as { FunctionCall?: { allowance: string | bigint | null } };
+    return perm.FunctionCall?.allowance != null ? BigInt(perm.FunctionCall.allowance) : null;
+  } catch {
+    return 0n; // key missing: treat as exhausted so it gets reissued
+  }
+}
+
+/** Prepay market storage: agents pay for orders and loans, lenders for bids. */
+async function ensureStorage(slug: string) {
+  const bal = BigInt(await view<string>("storage_balance_of", { account_id: id(slug) }));
+  if (bal >= nearToYocto("0.06")) return;
+  await tx(root, "storage_deposit", { account_id: id(slug) }, LOCA, nearToYocto("0.3"));
+  log("storage", `${slug} storage prepaid with 0.3 testnet NEAR`);
+}
 const ftCall = (who: Account, amount: bigint, msg: unknown) =>
   tx(who, "ft_transfer_call", { receiver_id: LOCA, amount: amount.toString(), msg: JSON.stringify(msg) }, USDC, 1n);
 const view = <T>(method: string, args: Record<string, unknown> = {}, contract = LOCA) =>
@@ -188,7 +244,7 @@ async function setup() {
   for (const a of AGENTS) {
     const profile = { name: a.name, service: a.service, operator: a.operator };
     let ag = await view<Agent | null>("get_agent", { agent_id: id(a.slug) });
-    if (!ag) await call(acct(a.slug), LOCA, "register_agent", { operator_id: id(a.operator), profile_hash: sha256(JSON.stringify(profile)) });
+    if (!ag) await call(acct(a.slug), LOCA, "register_agent", { operator_id: id(a.operator), profile_hash: sha256(JSON.stringify(profile)) }, nearToYocto("0.3"));
     if (!ag?.policy_version) {
       await call(acct(a.operator), LOCA, "set_spend_policy", {
         agent_id: id(a.slug), allowed_vendors: a.vendors.map((v) => id(VENDORS[v])), max_principal: usd(80).toString(),
@@ -227,6 +283,7 @@ const exposure = (loans: Loan[], lenderId: string, agentId: string) =>
 
 async function cycle(a: AgentSpec, mine: { order?: number }) {
   const agentAcc = acct(a.slug);
+  const signer = agentSigner(a.slug);
   const customerSlug = a.concentration && Math.random() < a.concentration ? CUSTOMERS[0] : pick(CUSTOMERS);
   const customer = acct(customerSlug);
   const amount = Math.round(rand(...a.price));
@@ -248,10 +305,10 @@ async function cycle(a: AgentSpec, mine: { order?: number }) {
   if (Math.random() < a.borrowRate && amount >= 30) {
     const principal = usd(Math.min(80, Math.round(amount * rand(0.2, 0.45))));
     const vendor = id(VENDORS[pick(a.vendors)]);
-    const req = await tx(agentAcc, "request_credit", {
+    const req = await tx(signer, "request_credit", {
       order_id: orderId, amount: principal.toString(), vendor_id: vendor,
       max_fee: ((principal * 8n) / 100n).toString(), expires_at: (t0 + 90n * SEC).toString(),
-    });
+    }, LOCA, 0n, AGENT_GAS);
     log("credit_requested", `${a.name} asks ${fmtUsd(principal)} against #${orderId}`, { tx: req.hash, order: orderId });
 
     const order = await view<Order>("get_order", { order_id: orderId });
@@ -277,7 +334,7 @@ async function cycle(a: AgentSpec, mine: { order?: number }) {
       log("no_bids", `No lender would fund ${a.name} (score ${score.score}); it works unlevered`, { order: orderId });
     } else {
       const best = valid.sort((x, y) => Number(x.fee - y.fee))[0];
-      const acc = await tx(agentAcc, "accept_offer", { offer_id: best.offerId });
+      const acc = await tx(signer, "accept_offer", { offer_id: best.offerId }, LOCA, 0n, AGENT_GAS);
       counters.loans++;
       log("loan_funded", `${a.name} takes ${best.lender.name} at ${fmtUsd(best.fee)}; ${fmtUsd(principal)} paid to ${vendor.split(".")[0]}`, { tx: acc.hash, order: orderId });
     }
@@ -295,7 +352,7 @@ async function cycle(a: AgentSpec, mine: { order?: number }) {
     log(def ? "loan_defaulted" : "order_refunded", `${customerSlug} reclaims #${orderId}${def ? `; bond covered ${fmtUsd(BigInt(def.data.paid_from_bond as string))}, loss ${fmtUsd(BigInt(def.data.shortfall as string))}` : ""}`, { tx: r.hash, order: orderId });
     return;
   }
-  const d = await tx(agentAcc, "mark_delivered", { order_id: orderId, deliverable_hash: sha256(`${orderId}:${Date.now()}`).slice(0, 32) });
+  const d = await tx(signer, "mark_delivered", { order_id: orderId, deliverable_hash: sha256(`${orderId}:${Date.now()}`).slice(0, 32) }, LOCA, 0n, AGENT_GAS);
   log("order_delivered", `${a.name} delivers #${orderId}`, { tx: d.hash, order: orderId });
 
   // Customer decides.
@@ -366,11 +423,20 @@ async function sweepStale() {
 
 /** Pull balances, refill bonds and wallets, keep every account able to pay gas and storage. */
 async function housekeeping() {
+  for (const slug of [...AGENTS.map((a) => a.slug), ...LENDERS.map((l) => l.slug)]) await ensureStorage(slug).catch((e) => log("error", `storage ${slug}: ${String(e).slice(0, 100)}`));
+  for (const a of AGENTS) {
+    const left = await keyAllowance(a.slug);
+    if (left === null && agentKeys[a.slug]) continue; // unlimited
+    if (!agentKeys[a.slug] || (left !== null && left < nearToYocto("0.2"))) {
+      await issueAgentKey(a.slug).then(() => log("agent_key", `${a.name} got a fresh function-call key (${AGENT_METHODS.length} methods)`)).catch((e) => log("error", `key ${a.slug}: ${String(e).slice(0, 100)}`));
+    }
+  }
   await sweepStale();
   const balanceOf = async (acc: string) => BigInt(await view<string>("ft_balance_of", { account_id: acc }, USDC));
   for (const slug of [...LENDERS.map((l) => l.slug), ...Object.values(VENDORS), ...AGENTS.map((a) => a.slug), ...CUSTOMERS]) {
     const owed = BigInt(await view<string>("get_balance", { account_id: id(slug) }));
-    if (owed > usd(5)) await tx(acct(slug), "withdraw", {}).catch(() => {});
+    const isAgent = AGENTS.some((a) => a.slug === slug);
+    if (owed > usd(5)) await tx(isAgent ? agentSigner(slug) : acct(slug), "withdraw", {}, LOCA, 0n, isAgent ? WITHDRAW_GAS : undefined).catch(() => {});
   }
   for (const c of CUSTOMERS) if ((await balanceOf(id(c))) < usd(400)) await tx(root, "mint", { account_id: id(c), amount: usd(2000).toString() }, USDC);
   for (const a of AGENTS) {
@@ -411,5 +477,19 @@ async function run(minutes: number) {
 
 const [cmd, arg] = process.argv.slice(2);
 if (cmd === "setup") await setup();
+else if (cmd === "upgrade") {
+  // Deploy the current build over the live market and migrate its state in place.
+  await acct("market").deployContract(readFileSync(WASM.loca));
+  await call(acct("market"), LOCA, "migrate", {});
+  const m = await view<{ totals: { orders: number } }>("get_market");
+  console.log(`Upgraded ${LOCA}; ${m.totals.orders} orders carried over.`);
+}
+else if (cmd === "keys") {
+  for (const a of AGENTS) {
+    await ensureStorage(a.slug);
+    if (!agentKeys[a.slug]) { await issueAgentKey(a.slug); console.log(`${a.name}: function-call key issued`); }
+  }
+  for (const l of LENDERS) await ensureStorage(l.slug);
+}
 else if (cmd === "run") await run(Number(arg ?? 60));
 else console.log("usage: pnpm swarm setup | pnpm swarm run [minutes]");

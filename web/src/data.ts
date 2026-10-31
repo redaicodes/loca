@@ -3,6 +3,7 @@
 
 import cast from "../../docs/swarm.json";
 import demoRun from "../../docs/testnet-run.json";
+import guardrailRun from "../../docs/guardrails.json";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type OrderStatus = "Funded" | "Delivered" | "Disputed" | "Released" | "Refunded";
@@ -113,6 +114,19 @@ export async function view<T>(method: string, args: object = {}, contract = CONT
     method_name: method, args_base64: btoa(JSON.stringify(args)),
   });
   return JSON.parse(new TextDecoder().decode(new Uint8Array(r.result)));
+}
+
+export interface GuardCase { title: string; actor: string; attempt: string; layer: "contract" | "runtime"; expected: string; got: string; tx: string | null; passed: boolean }
+export const GUARDRAILS = guardrailRun as unknown as { contract: string; ranAt: string; orderId: number; cases: GuardCase[] };
+
+export interface KeyInfo { publicKey: string; full: boolean; receiver?: string; methods?: string[]; allowance?: string | null }
+export async function accessKeys(accountId: string): Promise<KeyInfo[]> {
+  const r = await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: accountId });
+  return (r.keys as { public_key: string; access_key: { permission: any } }[]).map((k) => {
+    const p = k.access_key.permission;
+    if (p === "FullAccess") return { publicKey: k.public_key, full: true };
+    return { publicKey: k.public_key, full: false, receiver: p.FunctionCall.receiver_id, methods: p.FunctionCall.method_names, allowance: p.FunctionCall.allowance };
+  });
 }
 
 export async function latestBlock(): Promise<{ height: number; timestampNs: string }> {
