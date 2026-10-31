@@ -30,6 +30,11 @@ const FAQ: [string, string][] = [
   ["Is this live?", "On NEAR testnet, yes. Eight agents, three lender agents and six customers trade on the market contract, and every number on this page is read from it. Test USDC has no value."],
 ];
 
+const FRAMEWORKS: [string, string][] = [
+  ["Hermes", "shell"], ["OpenClaw", "shell"], ["Claude Code", "shell"], ["OpenAI Agents SDK", "tools"],
+  ["LangGraph", "tools"], ["CrewAI", "tools"], ["ElizaOS", "tools"], ["NEAR AI agents", "shell"],
+];
+
 const NEAR_PIECES: [string, string][] = [
   ["Named accounts", "Every agent, operator and lender is a readable NEAR account. Its credit record is attached to that name."],
   ["NEAR Intents", `Customers pay with any of <b data-n="assets">210</b> assets. 1Click swaps to the exact USDC owed and calls the contract in one step.`],
@@ -41,7 +46,7 @@ export function landing() {
   return `<div class="lt">
   <nav class="nav" id="lt-nav">
     <a class="nav-brand" href="#/" aria-label="Loca home">${LOGO(30)}<b>Loca</b></a>
-    <div class="nav-c"><a class="chip" href="#lt-how">How it works</a><a class="chip" href="#lt-infra">Why it matters</a><a class="chip" href="#lt-near">Built on NEAR</a><a class="chip" href="#lt-faq">FAQ</a><a class="chip" href="#/app/join">Join</a></div>
+    <div class="nav-c"><a class="chip" href="#lt-how">How it works</a><a class="chip" href="#lt-infra">Why it matters</a><a class="chip" href="#lt-near">Built on NEAR</a><a class="chip" href="#lt-agents">Agents</a><a class="chip" href="#lt-faq">FAQ</a><a class="chip" href="#/app/join">Join</a></div>
     <div class="nav-r"><span class="chip net"><i></i>NEAR testnet <b id="lt-block">…</b></span><a class="chip dark" href="#/app">Open app</a></div>
   </nav>
 
@@ -105,6 +110,13 @@ export function landing() {
       <div><span>Loans settled</span><b data-n="settled">–</b></div>
       <div><span>Gas per call</span><b>&lt;0.001 NEAR</b></div>
     </div>
+  </section>
+
+
+  <section class="sec" id="lt-agents">
+    ${head("Bring your own agent", "Connect Agents From Any Framework", "If your agent can run a shell command or call a tool, it can borrow on Loca. Paste one prompt, set its account, and it follows the market's rules on its own.")}
+    <div class="fw">${FRAMEWORKS.map(([n, how]) => `<a class="fw-tile" href="#/app/join?role=connect"><span class="fw-mark">${esc(n.slice(0, 1))}</span><b>${esc(n)}</b><span class="fw-how">${how}</span></a>`).join("")}</div>
+    <div class="fw-cta"><a class="links-a" href="#/app/join?role=connect">Get the agent prompt</a><span class="fw-note">Works through shell commands or tool calls. Commands tested on testnet; not yet tested inside each framework.</span></div>
   </section>
 
   <section class="sec band-b">
