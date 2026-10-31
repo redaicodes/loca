@@ -27,17 +27,22 @@ const FAQ: [string, string][] = [
 export function landing() {
   return `<div class="lt">
   <nav class="lt-nav">
-    <a class="lt-chip lt-brand" href="#/">${LOGO(18, "#1e1e1e")}LOCA</a>
-    <div class="lt-nav-c"><a class="lt-chip" href="#lt-category">Category</a><a class="lt-chip" href="#lt-how">How it works</a><a class="lt-chip" href="#lt-faq">FAQ</a><a class="lt-chip" href="#/app/swarm">Live swarm</a></div>
+    <a class="lt-brand" href="#/">${LOGO(34)}<span><b>loca</b><small>Line of Credit for Agents</small></span></a>
+    <div class="lt-nav-c"><a href="#lt-how">How it works</a><a href="#lt-category">Why it's new</a><a href="#lt-faq">FAQ</a><a href="#/app/swarm">Agent swarm</a></div>
     <a class="lt-chip dark" href="#/app">Open app</a>
   </nav>
 
   <header class="lt-hero">
     <div class="lt-sky" aria-hidden="true"></div>
-    ${win(`Testnet · live`, `<p id="lt-news">Reading the market contract</p><a href="#/app/swarm">Watch it live</a>`, "lt-news")}
-    <p class="lt-leader"><span>Introducing LOCA</span><i></i><span>Credit for software</span></p>
-    <h1>The First Credit Line Built For AI Agents</h1>
-    <div class="lt-links"><a href="#/app">Open The Market</a><a href="#/app/swarm">Watch The Swarm</a></div>
+    <div class="lt-hero-grid">
+      <div>
+        <p class="lt-acro"><b>L</b>ine <b>o</b>f <b>C</b>redit for <b>A</b>gents</p>
+        <h1>The First Credit Line Built For AI Agents</h1>
+        <p class="lt-lede">Agents borrow against orders their customers have already paid into escrow. Lenders compete on price. The escrow repays them first.</p>
+        <div class="lt-links left"><a href="#/app">Open The Market</a><a href="#/app/swarm">Explore The Agent Swarm</a></div>
+      </div>
+      ${win(`Latest on the market`, `<p id="lt-news">Reading the market contract</p><span class="lt-news-k">NEAR testnet · updates every few seconds</span>`, "lt-news")}
+    </div>
   </header>
 
   <section class="lt-pink" id="lt-how">
@@ -112,9 +117,10 @@ export function landing() {
   </section>
 
   <footer class="lt-foot">
-    <div class="lt-foot-logo">${LOGO(72, "#1e1e1e")}<span>LOCA</span></div>
-    <div class="lt-links"><a href="#/app/swarm">Watch The Swarm</a><a href="#/app">Open The Market</a></div>
-    <div class="lt-foot-b"><span>LOCA · Built for NEAR Hackathon 2026</span><span>Testnet prototype, not audited</span><a href="${EXPLORER_ACCOUNT}${CONTRACT}" target="_blank" rel="noopener">Market contract</a></div>
+    <div class="lt-foot-logo">${LOGO(96)}<span>loca</span></div>
+    <p class="lt-foot-acro">Line of Credit for Agents</p>
+    <div class="lt-links"><a href="#/app">Open The Market</a><a href="#/app/swarm">Explore The Agent Swarm</a></div>
+    <div class="lt-foot-b"><span>LOCA, Line of Credit for Agents · NEAR Hackathon 2026</span><span>Testnet prototype, not audited</span><a href="#/logos">Logo options</a><a href="${EXPLORER_ACCOUNT}${CONTRACT}" target="_blank" rel="noopener">Market contract</a></div>
   </footer>
 </div>`;
 }

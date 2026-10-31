@@ -2,6 +2,7 @@ import "./style.css";
 import { listTokens } from "../../src/intents/oneclick";
 import { CONTRACT, deriveFeed, latestBlock, loadStore, type FeedItem, type Store } from "./data";
 import { landing, resetLanding, updateLanding } from "./landing";
+import { logosPage } from "./logos";
 import { activity, agentDetail, agents, dashboard, lenders, market, orderDetail, orders } from "./pages";
 import { mountPay, pay } from "./pay";
 import { swarmPage, updateSwarm } from "./swarm-view";
@@ -32,7 +33,7 @@ let lastRoute = "";
 
 const shell = () => `
 <aside class="side">
-  <a class="brand" href="#/">${LOGO(30)}<span><b>LOCA</b><small>Credit for agents</small></span></a>
+  <a class="brand" href="#/">${LOGO(30, "#efe8d6", "#8aa3e6")}<span><b>loca</b><small>Line of Credit for Agents</small></span></a>
   <nav>${NAV.map((n) => `<a href="#/app${n.path ? `/${n.path}` : ""}" data-nav="${n.path}">${n.icon}<span>${n.name}</span></a>`).join("")}</nav>
   <div class="side-foot">
     <div class="net"><i id="net-dot"></i><span>NEAR testnet</span></div>
@@ -70,6 +71,12 @@ function parse() {
 /** Render the current route. `refresh` keeps scroll and leaves forms alone. */
 function route(refresh = false, fresh = new Set<string>()) {
   const { parts, params, raw } = parse();
+  if (parts[0] === "logos" || location.pathname.replace(/\/$/, "").endsWith("/logos")) {
+    mode = null;
+    document.body.className = "is-landing";
+    app.innerHTML = logosPage();
+    return;
+  }
   if (parts[0] !== "app") {
     setMode("landing");
     if (!refresh) window.scrollTo(0, 0);

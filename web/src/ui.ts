@@ -106,9 +106,26 @@ export const ICON = {
   copy: P('<rect x="7" y="7" width="10" height="10"/><path d="M13 4H4v9"/>'),
 };
 
-/** The LOCA mark: the advance (short bar) stacked on the order that backs it (long bar). Read together, an L. */
-export const LOGO = (size = 28, fill = "#2A4C9C") =>
-  `<svg class="logo" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="${fill}"/><rect x="8" y="9" width="7" height="6" rx="1.5" fill="#fff" opacity=".72"/><rect x="8" y="17" width="16" height="6" rx="1.5" fill="#fff"/></svg>`;
+/** Candidate marks, drawn on a 32-unit grid. `i` is the ink colour, `a` the blue accent. */
+export const LOGOS: Record<string, { name: string; idea: string; svg: (i: string, a: string) => string }> = {
+  "1": { name: "Split coin", idea: "The order, with half of it advanced",
+    svg: (i, a) => `<path d="M16 28A12 12 0 0 1 16 4" fill="none" stroke="${i}" stroke-width="3"/><path d="M16 2.5a13.5 13.5 0 0 1 0 27z" fill="${a}"/>` },
+  "2": { name: "Stepped bars", idea: "The fee falling with every repaid loan",
+    svg: (i, a) => `<rect x="4" y="5" width="24" height="5.5" rx="1.5" fill="${i}"/><rect x="4" y="13.25" width="17" height="5.5" rx="1.5" fill="${i}"/><rect x="4" y="21.5" width="10" height="5.5" rx="1.5" fill="${a}"/>` },
+  "3": { name: "Bracket and dot", idea: "Money held in escrow",
+    svg: (i, a) => `<path d="M10 4H5v24h5M22 4h5v24h-5" fill="none" stroke="${i}" stroke-width="3.2"/><circle cx="16" cy="16" r="5" fill="${a}"/>` },
+  "4": { name: "Line through a ring", idea: "A credit line running through the order",
+    svg: (i, a) => `<circle cx="14" cy="16" r="9.5" fill="none" stroke="${i}" stroke-width="3.2"/><path d="M1 16h24" stroke="${a}" stroke-width="3.2"/><path d="M24 10.5l7 5.5-7 5.5z" fill="${a}"/>` },
+  "5": { name: "Overlapping squares", idea: "Where lender and agent meet",
+    svg: (i, a) => `<rect x="12" y="12" width="9.5" height="9.5" fill="${a}"/><rect x="4" y="4" width="17.5" height="17.5" fill="none" stroke="${i}" stroke-width="3"/><rect x="12" y="12" width="17.5" height="17.5" fill="none" stroke="${i}" stroke-width="3"/>` },
+  "6": { name: "Rising record", idea: "A credit history that grows",
+    svg: (i, a) => `<path d="M3 29h26" stroke="${i}" stroke-width="2.2"/><path d="M4 23l7-7 5 4 8-9" fill="none" stroke="${i}" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="25.5" cy="9" r="3.6" fill="${a}"/>` },
+};
+export const logoChoice = () => (typeof localStorage !== "undefined" && LOGOS[localStorage.getItem("loca.logo") ?? ""] ? localStorage.getItem("loca.logo")! : "1");
+export const markSvg = (key: string, size: number, ink = "#1e1e1e", accent = "#2A4C9C") =>
+  `<svg class="logo" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true">${LOGOS[key].svg(ink, accent)}</svg>`;
+/** The current mark, as chosen on #/logos (defaults to the split coin). */
+export const LOGO = (size = 28, ink = "#1e1e1e", accent = "#2A4C9C") => markSvg(logoChoice(), size, ink, accent);
 
 export const empty = (title: string, body: string) =>
   `<div class="empty"><div class="empty-t">${esc(title)}</div><div class="muted">${body}</div></div>`;
