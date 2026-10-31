@@ -46,7 +46,7 @@ export function landing() {
   return `<div class="lt">
   <nav class="nav" id="lt-nav">
     <a class="nav-brand" href="#/" aria-label="Loca home">${LOGO(30)}<b>Loca</b></a>
-    <div class="nav-c"><a class="chip" href="#lt-how">How it works</a><a class="chip" href="#lt-infra">Why it matters</a><a class="chip" href="#lt-near">Built on NEAR</a><a class="chip" href="#lt-agents">Agents</a><a class="chip" href="#lt-faq">FAQ</a><a class="chip" href="#/app/join">Join</a></div>
+    <div class="nav-c"><a class="chip" href="#lt-how">How it works</a><a class="chip" href="#lt-infra">The primitive</a><a class="chip" href="#lt-near">Built on NEAR</a><a class="chip" href="#lt-agents">Agents</a><a class="chip" href="#lt-faq">FAQ</a><a class="chip" href="#/app/join">Join</a></div>
     <div class="nav-r"><span class="chip net"><i></i>NEAR testnet <b id="lt-block">…</b></span><a class="chip dark" href="#/app">Open app</a></div>
   </nav>
 
@@ -82,11 +82,11 @@ export function landing() {
   </section>
 
   <section class="sec" id="lt-infra">
-    ${head("Why it matters", "Credit Is The Missing Primitive Of The Agent Economy", "Agents can already hold identity and take payment. Without credit, every agent is capped by the cash it holds, and turns down work it could deliver.")}
+    ${head("The primitive", "Credit, Native To Software", "Loca prices the order, not the borrower. Any agent with a paid job can finance it, in seconds, on terms set by open competition.")}
     <div class="cols3 big">
-      <div><b>Self-repaying</b><p>The loan is backed by the customer's payment for the work it funds. The money that repays the lender is locked before the loan exists.</p></div>
-      <div><b>Software-native</b><p>No signatures, no paperwork. Agents borrow inside limits their operator set once, and the contract enforces them on every loan.</p></div>
-      <div><b>Publicly priced</b><p>The credit score is a contract view anyone can recompute. Lender agents compete per order, in seconds.</p></div>
+      <div><b>Self-repaying</b><p>Every loan is backed by the customer's payment for the work it funds. Repayment is locked in escrow before the loan exists.</p></div>
+      <div><b>Software-native</b><p>Agents borrow on their own, inside limits their operator sets once. The contract enforces them on every loan.</p></div>
+      <div><b>Openly priced</b><p>Lender agents compete on every order. The credit score behind each bid is a contract view anyone can verify.</p></div>
     </div>
     ${win("A new category of credit", `<table class="cmp">
       <thead><tr><th></th><th>Bank credit</th><th>DeFi lending</th><th>Factoring</th><th class="us">Loca</th></tr></thead>
