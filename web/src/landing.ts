@@ -1,6 +1,6 @@
 // Public landing page. The hero replays real loans from the market contract; every number is live.
 
-import { CONTRACT, type FeedItem, type Loan, type Offer, type Order, type Store } from "./data";
+import { CONTRACT, latestBlock, type FeedItem, type Loan, type Offer, type Order, type Store } from "./data";
 import { agentRows, metrics } from "./pages";
 import { EXPLORER_ACCOUNT } from "./data";
 import { LOGO, esc, label } from "./ui";
@@ -26,22 +26,32 @@ const FAQ: [string, string][] = [
 
 export function landing() {
   return `<div class="lt">
-  <nav class="lt-nav">
-    <a class="lt-brand" href="#/">${LOGO(34)}<span><b>loca</b><small>Line of Credit for Agents</small></span></a>
+  <nav class="lt-nav" id="lt-nav">
+    <a class="lt-brand" href="#/">${LOGO(30, "currentColor")}<b>Loca</b></a>
     <div class="lt-nav-c"><a href="#lt-how">How it works</a><a href="#lt-category">Why it's new</a><a href="#lt-faq">FAQ</a><a href="#/app/swarm">Agent swarm</a></div>
-    <a class="lt-chip dark" href="#/app">Open app</a>
+    <div class="lt-nav-r"><span class="lt-net"><i></i>NEAR testnet <b id="lt-block">…</b></span><a class="lt-cta" href="#/app">Open app</a></div>
   </nav>
 
   <header class="lt-hero">
-    <div class="lt-sky" aria-hidden="true"></div>
     <div class="lt-hero-grid">
-      <div>
+      <div class="lt-hero-l">
         <p class="lt-acro"><b>L</b>ine <b>o</b>f <b>C</b>redit for <b>A</b>gents</p>
         <h1>The First Credit Line Built For AI Agents</h1>
-        <p class="lt-lede">Agents borrow against orders their customers have already paid into escrow. Lenders compete on price. The escrow repays them first.</p>
-        <div class="lt-links left"><a href="#/app">Open The Market</a><a href="#/app/swarm">Explore The Agent Swarm</a></div>
+        <p class="lt-lede">Agents borrow against orders their customers have already paid into escrow. Lenders compete on price. The contract repays them first.</p>
+        <div class="lt-hero-cta"><a class="lt-btn" href="#/app">Open the market</a><a class="lt-btn ghost" href="#/app/swarm">Explore the agent swarm</a></div>
       </div>
-      ${win(`Latest on the market`, `<p id="lt-news">Reading the market contract</p><span class="lt-news-k">NEAR testnet · updates every few seconds</span>`, "lt-news")}
+      <div class="lt-console" aria-label="Live calls to the LOCA market contract">
+        <div class="lt-console-h"><span><i class="lt-dot"></i>market.loca-swarm.testnet</span><span>block <b id="lt-block2">…</b></span></div>
+        <ol class="lt-console-log" id="lt-log"><li class="muted">connecting to NEAR testnet…</li></ol>
+        <div class="lt-console-f"><span>Contract calls, read from chain state</span><span class="lt-cursor">_</span></div>
+      </div>
+    </div>
+    <div class="lt-strip">
+      <div><span>Value locked</span><b data-n="tvl">–</b></div>
+      <div><span>Credit originated</span><b data-n="credit">–</b></div>
+      <div><span>Loans</span><b data-n="loans">–</b></div>
+      <div><span>Repaid</span><b data-n="repaid">–</b></div>
+      <div><span>Agents</span><b data-n="agents">–</b></div>
     </div>
   </header>
 
@@ -117,7 +127,7 @@ export function landing() {
   </section>
 
   <footer class="lt-foot">
-    <div class="lt-foot-logo">${LOGO(96)}<span>loca</span></div>
+    <div class="lt-foot-logo">${LOGO(96)}<b>Loca</b></div>
     <p class="lt-foot-acro">Line of Credit for Agents</p>
     <div class="lt-links"><a href="#/app">Open The Market</a><a href="#/app/swarm">Explore The Agent Swarm</a></div>
     <div class="lt-foot-b"><span>LOCA, Line of Credit for Agents · NEAR Hackathon 2026</span><span>Testnet prototype, not audited</span><a href="#/logos">Logo options</a><a href="${EXPLORER_ACCOUNT}${CONTRACT}" target="_blank" rel="noopener">Market contract</a></div>
@@ -147,17 +157,20 @@ function countTo(el: HTMLElement, to: number, fmt: (v: number) => string, key: s
 
 export function updateLanding(s: Store, feed: FeedItem[], assets: number | null) {
   if (!document.querySelector(".lt")) return;
-  const news = document.getElementById("lt-news");
-  if (news && feed[0]) news.textContent = feed[0].text;
+  consoleLog(feed);
+  void blockHeight();
   const m = metrics(s);
   const t = s.market.totals;
-  const nums = document.querySelector(".lt-kv")!;
+  const nums = document.querySelector(".lt-strip")!;
   const run = () => {
     const set = (k: string, v: number, fmt: (v: number) => string) => {
       document.querySelectorAll<HTMLElement>(`[data-n="${k}"]`).forEach((el, i) => countTo(el, v, fmt, `${k}${i}`));
     };
     const usd0 = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
     set("escrow", Number(t.escrow_volume) / 1e6, usd0);
+    set("tvl", m.tvl, usd0);
+    set("loans", t.loans, (v) => Math.round(v).toLocaleString("en-US"));
+    set("agents", s.market.agents, (v) => String(Math.round(v)));
     set("credit", Number(t.originated) / 1e6, usd0);
     set("repaid", m.closed ? m.repayRate * 100 : 0, (v) => `${v.toFixed(1)}%`);
     set("fee", m.avgFee * 100, (v) => `${v.toFixed(2)}%`);
@@ -272,6 +285,44 @@ const ticket = (() => {
 
 export const resetLanding = () => {
   ticket.reset();
+  logged.clear();
   counted = false;
   shown.clear();
 };
+
+// ---------------------------------------------------------------- hero console
+
+const METHOD: Record<string, string> = {
+  order: "ft_transfer_call", request: "request_credit", bid: "ft_transfer_call", loan: "accept_offer",
+  delivered: "mark_delivered", settled: "approve", refunded: "cancel_order", disputed: "dispute", default: "cancel_order",
+};
+const logged = new Set<string>();
+
+function consoleLog(feed: FeedItem[]) {
+  const el = document.getElementById("lt-log");
+  if (!el) return;
+  const items = feed.slice(0, 11).reverse();
+  const first = logged.size === 0;
+  el.innerHTML = items
+    .map((f) => {
+      const isNew = !first && !logged.has(f.key);
+      const time = new Date(f.at).toLocaleTimeString("en-GB");
+      const method = METHOD[f.kind];
+      return `<li class="${isNew ? "new" : ""} k-${f.kind}"><span class="t">${time}</span><span class="m">${method}</span><span class="d">${esc(f.text)}</span><span class="ok">✓</span></li>`;
+    })
+    .join("");
+  for (const f of feed) logged.add(f.key);
+}
+
+let lastBlockAt = 0;
+async function blockHeight() {
+  if (Date.now() - lastBlockAt < 4000) return;
+  lastBlockAt = Date.now();
+  try {
+    const b = await latestBlock();
+    const v = b.height.toLocaleString("en-US");
+    for (const id of ["lt-block", "lt-block2"]) { const el = document.getElementById(id); if (el) el.textContent = `#${v}`; }
+  } catch { /* keep the last value */ }
+}
+
+window.addEventListener("scroll", () => document.getElementById("lt-nav")?.classList.toggle("solid", window.scrollY > 40), { passive: true });

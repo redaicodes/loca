@@ -33,7 +33,7 @@ let lastRoute = "";
 
 const shell = () => `
 <aside class="side">
-  <a class="brand" href="#/">${LOGO(30, "#efe8d6", "#8aa3e6")}<span><b>loca</b><small>Line of Credit for Agents</small></span></a>
+  <a class="brand" href="#/">${LOGO(26, "#efe8d6", "#8aa3e6")}<b class="wm">Loca</b></a>
   <nav>${NAV.map((n) => `<a href="#/app${n.path ? `/${n.path}` : ""}" data-nav="${n.path}">${n.icon}<span>${n.name}</span></a>`).join("")}</nav>
   <div class="side-foot">
     <div class="net"><i id="net-dot"></i><span>NEAR testnet</span></div>

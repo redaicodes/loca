@@ -3,7 +3,7 @@
 import { LOGOS, esc, logoChoice, markSvg } from "./ui";
 
 const lockup = (k: string, size: number, ink: string, accent: string, sub = true) =>
-  `<span class="lg-lockup" style="color:${ink}">${markSvg(k, size, ink, accent)}<span><b style="font-size:${size * 0.72}px">loca</b>${sub ? `<small>Line of Credit for Agents</small>` : ""}</span></span>`;
+  `<span class="lg-lockup" style="color:${ink}">${markSvg(k, size, ink, accent)}<span><b style="font-size:${size * 0.72}px">Loca</b>${sub ? `<small>Line of Credit for Agents</small>` : ""}</span></span>`;
 
 export function logosPage() {
   const current = logoChoice();
@@ -16,7 +16,7 @@ export function logosPage() {
       <div class="lg-row light">${lockup(k, 34, "#1e1e1e", "#2A4C9C")}</div>
       <div class="lg-row dark">${lockup(k, 30, "#efe8d6", "#8aa3e6")}</div>
       <div class="lg-row blue">${lockup(k, 30, "#ffffff", "#e7dcc4", false)}</div>
-      <div class="lg-row tiny"><span>Favicon</span>${markSvg(k, 16)}${markSvg(k, 24)}${markSvg(k, 32)}<span class="lg-tab">${markSvg(k, 14)} loca</span></div>
+      <div class="lg-row tiny"><span>Favicon</span>${markSvg(k, 16)}${markSvg(k, 24)}${markSvg(k, 32)}<span class="lg-tab">${markSvg(k, 14)} Loca</span></div>
       <button class="lg-use" data-logo="${k}">${k === current ? "In use" : "Use this"}</button>
     </section>`)
     .join("")}</div>
