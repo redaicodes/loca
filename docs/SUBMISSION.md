@@ -36,9 +36,9 @@ Optional tags: @NearLegion @NearBuilders
 
 ## 90-second video script
 
-1. **0–10s:** dashboard hero, then the agent card. "This research agent has 3 paid orders and a LOCA Score of 620."
+1. **0–10s:** the app's Overview, then the agent page. "This research agent has a LOCA Score of 755, computed by the contract. Before it had any credit history it was 620."
 2. **10–30s:** terminal running `pnpm demo:sim`. The order is escrowed, the agent requests $30, and three lenders bid $1.37, $1.20 and $1.58.
 3. **30–45s:** the loan pays the vendor, the report is delivered and the customer approves. The waterfall shows $31.20 to the lender and $68.80 to the agent.
 4. **45–60s:** the score moves 620 → 747, the second auction runs, and the winning bid is $0.60.
-5. **60–75s:** `pnpm intents:quote`. ETH, SOL and BTC each route to exactly $100 USDC; the unlisted token is refused.
-6. **75–90s:** the guardrails cards, then a NearBlocks link for the waterfall transaction.
+5. **60–75s:** the Pay page: pick ETH on Arbitrum and get a live quote for exactly $100 USDC into escrow, then show the recorded SOL and BTC routes and the refused unlisted token.
+6. **75–90s:** Credit market page: the guardrails, then order #3's lifecycle and a NearBlocks link for the waterfall transaction.

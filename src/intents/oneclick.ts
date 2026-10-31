@@ -6,7 +6,9 @@
 // actually arrive in `ft_on_transfer`, so a duplicate status callback can never credit twice.
 // There is no Intents testnet: real execution is mainnet-only; `dry: true` quotes are free.
 
-export const ONECLICK_URL = process.env.ONECLICK_URL ?? "https://1click.chaindefuser.com";
+// `process` is absent in the browser; the dashboard imports this module too.
+const ENV: Record<string, string | undefined> = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
+export const ONECLICK_URL = ENV.ONECLICK_URL ?? "https://1click.chaindefuser.com";
 export const NEAR_USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 
 export interface IntentsToken {
@@ -92,7 +94,7 @@ export const DEFAULT_POLICY: FundingPolicy = { maxSlippageBps: 100, minValidityS
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (process.env.ONECLICK_JWT) headers.Authorization = `Bearer ${process.env.ONECLICK_JWT}`;
+  if (ENV.ONECLICK_JWT) headers.Authorization = `Bearer ${ENV.ONECLICK_JWT}`;
   const res = await fetch(`${ONECLICK_URL}${path}`, { ...init, headers });
   const body = await res.text();
   if (!res.ok) throw new OneClickError(res.status, body);

@@ -90,10 +90,9 @@ Mainnet note: near-sdk 5.30 wasm imports nearcore 2.14 host functions. Testnet i
 
 ## UI style
 
-Match the NEAR Hackathon visual identity:
+The app borrows the NEAR Hackathon palette and type, not its announcement graphics:
 
-- Warm paper background `#E9E0CB`, ink `#2A2520`, cobalt `#0B5CAD` for blocks, links and highlights.
-- Headlines: heavy, tight grotesk (Archivo / Inter Tight, 800–900, tight tracking, uppercase for titles).
-- Labels and data: IBM Plex Mono; bracket labels like `[ 01 ]`, `[ ORDER #12 ]`.
-- Faint graph-paper grid, crop-mark corners on hero panels, square cards with 1px borders. No rounded pills, gradients or shadows.
-- Visuals: dithered or halftone imagery in cobalt on paper.
+- Warm paper background `#E9E0CB`, ink `#2A2520`, cobalt `#0B5CAD` for the active state, links and the lender series; `#C2662D` for the agent series.
+- Archivo for UI text and headings; IBM Plex Mono for amounts, account ids, hashes and labels.
+- App layout: dark ink sidebar, sticky search bar, square 1px-bordered surfaces, no gradients or shadows.
+- Pages: Overview, Agents (and agent detail), Orders (and order detail), Credit market, Lenders, Pay with any token, Activity.
