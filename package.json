@@ -1,0 +1,29 @@
+{
+  "name": "loca",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build:contracts": "bash scripts/build-contracts.sh",
+    "test:contracts": "cd contracts/loca && cargo test",
+    "test": "vitest run",
+    "demo:sim": "tsx scripts/demo.ts --network sandbox",
+    "demo:testnet": "tsx scripts/demo.ts --network testnet",
+    "intents:quote": "tsx scripts/intents-quote.ts",
+    "web:dev": "vite web",
+    "web:build": "vite build web"
+  },
+  "dependencies": {
+    "near-api-js": "^7.4.0",
+    "near-sandbox": "^0.3.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "dotenv": "^18.0.9",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

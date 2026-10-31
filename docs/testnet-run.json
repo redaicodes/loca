@@ -1,0 +1,980 @@
+{
+  "network": "testnet",
+  "explorer": "https://testnet.nearblocks.io/txns/",
+  "generatedAt": "2026-10-31T17:52:13.698Z",
+  "contracts": {
+    "loca": "lmvwp2jlc-loca.loca-mvwp1z4g.testnet",
+    "token": "lmvwp2jlc-usdc.loca-mvwp1z4g.testnet"
+  },
+  "finalState": {
+    "agent": {
+      "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+      "operator_id": "lmvwp2jlc-operator.loca-mvwp1z4g.testnet",
+      "profile_hash": "30d669e4807d74cae4260ecc336517ca1b4a4259650a4c9d3026d929e7bcc865",
+      "registered_at": "1793468953375807451",
+      "policy": {
+        "allowed_vendors": [
+          "lmvwp2jlc-vendor.loca-mvwp1z4g.testnet"
+        ],
+        "max_principal": "50000000"
+      },
+      "policy_version": 1,
+      "bond": "5000000",
+      "active_loans": 0,
+      "stats": {
+        "orders_received": 6,
+        "orders_completed": 5,
+        "orders_refunded": 0,
+        "disputes_lost": 0,
+        "unique_customers": 3,
+        "revenue": "260000000",
+        "loans_taken": 2,
+        "loans_repaid": 2,
+        "loans_repaid_with_bond": 0,
+        "loans_defaulted": 0,
+        "principal_repaid": "60000000",
+        "default_loss": "0"
+      }
+    },
+    "score": {
+      "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+      "version": "v0",
+      "score": 755,
+      "rated": true,
+      "components": [
+        {
+          "name": "revenue_continuity",
+          "weight_bps": 3000,
+          "value_bps": 5500
+        },
+        {
+          "name": "repayment_history",
+          "weight_bps": 2500,
+          "value_bps": 10000
+        },
+        {
+          "name": "fulfillment",
+          "weight_bps": 2000,
+          "value_bps": 10000
+        },
+        {
+          "name": "treasury_bond",
+          "weight_bps": 1000,
+          "value_bps": 1000
+        },
+        {
+          "name": "operator_controls",
+          "weight_bps": 1000,
+          "value_bps": 10000
+        },
+        {
+          "name": "customer_diversity",
+          "weight_bps": 500,
+          "value_bps": 6000
+        }
+      ],
+      "reason_codes": []
+    }
+  },
+  "steps": [
+    {
+      "act": "00",
+      "title": "Deploy LOCA credit contract",
+      "detail": {
+        "loca": "lmvwp2jlc-loca.loca-mvwp1z4g.testnet",
+        "token": "lmvwp2jlc-usdc.loca-mvwp1z4g.testnet"
+      },
+      "tx": "84CA2gG9MMcaqEjunwAeF18WQfpmAXrbbSwkCXDR3pxM",
+      "events": []
+    },
+    {
+      "act": "01",
+      "title": "Agent registers LOCA ID",
+      "detail": {
+        "agent": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+        "operator": "lmvwp2jlc-operator.loca-mvwp1z4g.testnet",
+        "profile": {
+          "name": "Atlas Research Agent",
+          "service": "paid research briefs",
+          "version": "1"
+        }
+      },
+      "tx": "5TARzaAvzVpfAVNjdp4aoKBQn5fgPqeEs6aWxx9LH8z6",
+      "events": [
+        {
+          "event": "agent_registered",
+          "data": {
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "operator_id": "lmvwp2jlc-operator.loca-mvwp1z4g.testnet",
+            "profile_hash": "30d669e4807d74cae4260ecc336517ca1b4a4259650a4c9d3026d929e7bcc865"
+          }
+        }
+      ]
+    },
+    {
+      "act": "01",
+      "title": "Operator sets spend policy (approved vendor, $50 cap)",
+      "tx": "7ZKnWxo5MzAmyaEzVqF4vAa5cQJ775dwX6yZMnyTaB1b",
+      "events": [
+        {
+          "event": "policy_set",
+          "data": {
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "version": 1,
+            "policy": {
+              "allowed_vendors": [
+                "lmvwp2jlc-vendor.loca-mvwp1z4g.testnet"
+              ],
+              "max_principal": "50000000"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "act": "01",
+      "title": "Operator posts $5 first-loss bond",
+      "tx": "7Ggek8YEsRfRWahrKA8rg8C3LK6ETWdviMtgCKpqqXhj",
+      "events": [
+        {
+          "event": "bond_posted",
+          "data": {
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "from": "lmvwp2jlc-operator.loca-mvwp1z4g.testnet",
+            "amount": "5000000"
+          }
+        }
+      ]
+    },
+    {
+      "act": "02",
+      "title": "Track record: 3 paid orders, score 620 (rated)",
+      "detail": {
+        "score": {
+          "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+          "version": "v0",
+          "score": 620,
+          "rated": true,
+          "components": [
+            {
+              "name": "revenue_continuity",
+              "weight_bps": 3000,
+              "value_bps": 4500
+            },
+            {
+              "name": "repayment_history",
+              "weight_bps": 2500,
+              "value_bps": 5000
+            },
+            {
+              "name": "fulfillment",
+              "weight_bps": 2000,
+              "value_bps": 10000
+            },
+            {
+              "name": "treasury_bond",
+              "weight_bps": 1000,
+              "value_bps": 1000
+            },
+            {
+              "name": "operator_controls",
+              "weight_bps": 1000,
+              "value_bps": 10000
+            },
+            {
+              "name": "customer_diversity",
+              "weight_bps": 500,
+              "value_bps": 10000
+            }
+          ],
+          "reason_codes": [
+            "NO_CREDIT_HISTORY"
+          ]
+        }
+      }
+    },
+    {
+      "act": "03",
+      "title": "Customer escrows $100 order #3",
+      "tx": "H2ckWud1Es53x4DWsFnHqC1fmRBt852fQeatgui1rqxY",
+      "events": [
+        {
+          "event": "order_funded",
+          "data": {
+            "order_id": 3,
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "customer_id": "lmvwp2jlc-cust-a.loca-mvwp1z4g.testnet",
+            "amount": "100000000",
+            "terms_hash": "084826166866010bca8ab10cbefc842250a0c33dff2b3597c52da05d29b708cb",
+            "deadline": "1793472601134019246"
+          }
+        }
+      ],
+      "detail": {
+        "brief": {
+          "topic": "Stablecoin flows into NEAR, Q3",
+          "questions": [
+            "Net inflow",
+            "Top source chain",
+            "Active wallets"
+          ]
+        }
+      }
+    },
+    {
+      "act": "03",
+      "title": "Agent requests $30 advance for data, max fee $3",
+      "tx": "H2oTv3AsnPUjRHruqHLaVFh9mzBLgZAEyg8AFQMEzVNh",
+      "events": [
+        {
+          "event": "credit_requested",
+          "data": {
+            "order_id": 3,
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "amount": "30000000",
+            "vendor_id": "lmvwp2jlc-vendor.loca-mvwp1z4g.testnet",
+            "max_fee": "3000000",
+            "expires_at": "1793469606587733387"
+          }
+        }
+      ]
+    },
+    {
+      "act": "03",
+      "title": "Conservative / escrow coverage: bids $1.37 (457bps)",
+      "detail": {
+        "rationale": [
+          "escrow coverage 3.33x",
+          "bond 17% of principal"
+        ]
+      },
+      "tx": "9K81DciHKiBKkdxgguJjPM73kB5orKGR8Fw3BAxZ7eNX",
+      "events": [
+        {
+          "event": "offer_made",
+          "data": {
+            "offer_id": 0,
+            "order_id": 3,
+            "lender_id": "lmvwp2jlc-lender-cov.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1371000",
+            "expires_at": "1793469313834165305",
+            "strategy": "escrow-coverage"
+          }
+        }
+      ]
+    },
+    {
+      "act": "03",
+      "title": "History-weighted / repayment first: bids $1.20 (400bps)",
+      "detail": {
+        "rationale": [
+          "repaid 0, defaulted 0"
+        ]
+      },
+      "tx": "BQZ77kkstXwCg7nqKzSMvbTdpJYXEAP2Xcpwfri7w7B4",
+      "events": [
+        {
+          "event": "offer_made",
+          "data": {
+            "offer_id": 1,
+            "order_id": 3,
+            "lender_id": "lmvwp2jlc-lender-hist.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1200000",
+            "expires_at": "1793469319347539850",
+            "strategy": "repayment-history"
+          }
+        }
+      ]
+    },
+    {
+      "act": "03",
+      "title": "Concentration-aware / exposure capped: bids $1.58 (528bps)",
+      "detail": {
+        "rationale": [
+          "exposure to agent 0 + 30000000 vs cap 60000000"
+        ]
+      },
+      "tx": "FRTjzT3eo2pdHDAP92ewgHF7TnwdZS4vKuQVBUkkRf45",
+      "events": [
+        {
+          "event": "offer_made",
+          "data": {
+            "offer_id": 2,
+            "order_id": 3,
+            "lender_id": "lmvwp2jlc-lender-conc.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1584000",
+            "expires_at": "1793469326663435675",
+            "strategy": "concentration-aware"
+          }
+        }
+      ]
+    },
+    {
+      "act": "03",
+      "title": "Agent accepts cheapest valid offer: $1.20 from repayment-history",
+      "detail": {
+        "offers": [
+          {
+            "id": 1,
+            "order_id": 3,
+            "lender_id": "lmvwp2jlc-lender-hist.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1200000",
+            "expires_at": "1793469319347539850",
+            "strategy": "repayment-history",
+            "status": "Open",
+            "created_at": "1793469026663435675"
+          },
+          {
+            "id": 0,
+            "order_id": 3,
+            "lender_id": "lmvwp2jlc-lender-cov.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1371000",
+            "expires_at": "1793469313834165305",
+            "strategy": "escrow-coverage",
+            "status": "Open",
+            "created_at": "1793469019991040674"
+          },
+          {
+            "id": 2,
+            "order_id": 3,
+            "lender_id": "lmvwp2jlc-lender-conc.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1584000",
+            "expires_at": "1793469326663435675",
+            "strategy": "concentration-aware",
+            "status": "Open",
+            "created_at": "1793469033209115757"
+          }
+        ]
+      },
+      "tx": "BGGTKN1x6e7dsMpt4M64JMdDADTdwYyV2uQZytGDH1xc",
+      "events": [
+        {
+          "event": "loan_funded",
+          "data": {
+            "loan_id": 0,
+            "order_id": 3,
+            "offer_id": 1,
+            "lender_id": "lmvwp2jlc-lender-hist.loca-mvwp1z4g.testnet",
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "vendor_id": "lmvwp2jlc-vendor.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1200000"
+          }
+        },
+        {
+          "event": "offer_released",
+          "data": {
+            "offer_id": 0,
+            "lender_id": "lmvwp2jlc-lender-cov.loca-mvwp1z4g.testnet"
+          }
+        },
+        {
+          "event": "offer_released",
+          "data": {
+            "offer_id": 2,
+            "lender_id": "lmvwp2jlc-lender-conc.loca-mvwp1z4g.testnet"
+          }
+        }
+      ]
+    },
+    {
+      "act": "03",
+      "title": "Vendor withdraws $30 paid directly by the loan",
+      "tx": "HmTL4J53cKdnyN1M6cfQpg5hPMDnniDH1fcAntc1uEHt",
+      "events": [
+        {
+          "event": "withdrawn",
+          "data": {
+            "account_id": "lmvwp2jlc-vendor.loca-mvwp1z4g.testnet",
+            "amount": "30000000"
+          }
+        }
+      ]
+    },
+    {
+      "act": "03",
+      "title": "Agent delivers report (offline)",
+      "detail": {
+        "report": "# Stablecoin flows into NEAR, Q3\n\n- **Net inflow**: 45 (sample 1)\n- **Top source chain**: 884 (sample 2)\n- **Active wallets**: 381 (sample 3)\n\n_Data: lmvwp2jlc-vendor.loca-mvwp1z4g.testnet. Written by the offline writer (no inference key set)._"
+      },
+      "tx": "34tQiihDP1k1A8hA9PMtC6mrXy3wSowj5A3Amy8s84GW",
+      "events": [
+        {
+          "event": "order_delivered",
+          "data": {
+            "order_id": 3,
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "deliverable_hash": "0ea5d7ed5c348ec915054920b0d3c2438634ee232e22ebb8e798f5f14f266b77"
+          }
+        }
+      ]
+    },
+    {
+      "act": "03",
+      "title": "Customer approves; escrow runs the repayment waterfall",
+      "tx": "GwXt5PZnTyhjzX7Bz61DZkWsGCjRfAEah3ZeDcT1rXeJ",
+      "events": [
+        {
+          "event": "loan_repaid",
+          "data": {
+            "loan_id": 0,
+            "order_id": 3,
+            "lender_id": "lmvwp2jlc-lender-hist.loca-mvwp1z4g.testnet",
+            "paid_from_escrow": "31200000",
+            "paid_from_bond": "0",
+            "shortfall": "0"
+          }
+        },
+        {
+          "event": "order_settled",
+          "data": {
+            "order_id": 3,
+            "outcome": "approved",
+            "customer_refund": "0",
+            "to_lender": "31200000",
+            "to_agent": "68800000",
+            "lender_shortfall": "0"
+          }
+        }
+      ]
+    },
+    {
+      "act": "03",
+      "title": "Score 620 → 747",
+      "detail": {
+        "before": {
+          "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+          "version": "v0",
+          "score": 620,
+          "rated": true,
+          "components": [
+            {
+              "name": "revenue_continuity",
+              "weight_bps": 3000,
+              "value_bps": 4500
+            },
+            {
+              "name": "repayment_history",
+              "weight_bps": 2500,
+              "value_bps": 5000
+            },
+            {
+              "name": "fulfillment",
+              "weight_bps": 2000,
+              "value_bps": 10000
+            },
+            {
+              "name": "treasury_bond",
+              "weight_bps": 1000,
+              "value_bps": 1000
+            },
+            {
+              "name": "operator_controls",
+              "weight_bps": 1000,
+              "value_bps": 10000
+            },
+            {
+              "name": "customer_diversity",
+              "weight_bps": 500,
+              "value_bps": 10000
+            }
+          ],
+          "reason_codes": [
+            "NO_CREDIT_HISTORY"
+          ]
+        },
+        "after": {
+          "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+          "version": "v0",
+          "score": 747,
+          "rated": true,
+          "components": [
+            {
+              "name": "revenue_continuity",
+              "weight_bps": 3000,
+              "value_bps": 5000
+            },
+            {
+              "name": "repayment_history",
+              "weight_bps": 2500,
+              "value_bps": 10000
+            },
+            {
+              "name": "fulfillment",
+              "weight_bps": 2000,
+              "value_bps": 10000
+            },
+            {
+              "name": "treasury_bond",
+              "weight_bps": 1000,
+              "value_bps": 1000
+            },
+            {
+              "name": "operator_controls",
+              "weight_bps": 1000,
+              "value_bps": 10000
+            },
+            {
+              "name": "customer_diversity",
+              "weight_bps": 500,
+              "value_bps": 7500
+            }
+          ],
+          "reason_codes": []
+        },
+        "settlement": [
+          {
+            "event": "loan_repaid",
+            "data": {
+              "loan_id": 0,
+              "order_id": 3,
+              "lender_id": "lmvwp2jlc-lender-hist.loca-mvwp1z4g.testnet",
+              "paid_from_escrow": "31200000",
+              "paid_from_bond": "0",
+              "shortfall": "0"
+            }
+          },
+          {
+            "event": "order_settled",
+            "data": {
+              "order_id": 3,
+              "outcome": "approved",
+              "customer_refund": "0",
+              "to_lender": "31200000",
+              "to_agent": "68800000",
+              "lender_shortfall": "0"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "act": "04",
+      "title": "Customer escrows $100 order #4",
+      "tx": "BEsYAH6J4fo7YqTCLXC5CEK7eYvCyLPRXFMoX4wB3NAw",
+      "events": [
+        {
+          "event": "order_funded",
+          "data": {
+            "order_id": 4,
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "customer_id": "lmvwp2jlc-cust-b.loca-mvwp1z4g.testnet",
+            "amount": "100000000",
+            "terms_hash": "cecca63dc011d6a7d9ef1f8064099f98ff01d7cb87c895364ed3f0ae003b4372",
+            "deadline": "1793472659255136489"
+          }
+        }
+      ],
+      "detail": {
+        "brief": {
+          "topic": "Agent payments volume on NEAR",
+          "questions": [
+            "Net inflow",
+            "Top source chain",
+            "Active wallets"
+          ]
+        }
+      }
+    },
+    {
+      "act": "04",
+      "title": "Agent requests $30 advance for data, max fee $3",
+      "tx": "2rdgbDegZepw5Mp6KzkhnV51PY9DQp2bqMj1R5XqYiL2",
+      "events": [
+        {
+          "event": "credit_requested",
+          "data": {
+            "order_id": 4,
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "amount": "30000000",
+            "vendor_id": "lmvwp2jlc-vendor.loca-mvwp1z4g.testnet",
+            "max_fee": "3000000",
+            "expires_at": "1793469664789166149"
+          }
+        }
+      ]
+    },
+    {
+      "act": "04",
+      "title": "Conservative / escrow coverage: bids $1.18 (393bps)",
+      "detail": {
+        "rationale": [
+          "escrow coverage 3.33x",
+          "bond 17% of principal"
+        ]
+      },
+      "tx": "wcGMPpDcybMWq7fekrj6Lh79wBiNpwdiHqWWpjKK9EU",
+      "events": [
+        {
+          "event": "offer_made",
+          "data": {
+            "offer_id": 3,
+            "order_id": 4,
+            "lender_id": "lmvwp2jlc-lender-cov.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1179000",
+            "expires_at": "1793469370764381558",
+            "strategy": "escrow-coverage"
+          }
+        }
+      ]
+    },
+    {
+      "act": "04",
+      "title": "History-weighted / repayment first: bids $0.60 (200bps)",
+      "detail": {
+        "rationale": [
+          "repaid 1, defaulted 0"
+        ]
+      },
+      "tx": "BTNwzY6wiXR8KqHHtinFWfkyoNCcdq8B8aaeBJvqTw9b",
+      "events": [
+        {
+          "event": "offer_made",
+          "data": {
+            "offer_id": 4,
+            "order_id": 4,
+            "lender_id": "lmvwp2jlc-lender-hist.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "600000",
+            "expires_at": "1793469376240728209",
+            "strategy": "repayment-history"
+          }
+        }
+      ]
+    },
+    {
+      "act": "04",
+      "title": "Concentration-aware / exposure capped: bids $1.36 (452bps)",
+      "detail": {
+        "rationale": [
+          "exposure to agent 0 + 30000000 vs cap 60000000"
+        ]
+      },
+      "tx": "EN1bghuD9HuFmxFJkjmpYF5SSgkT5RoFjBkdzk8E62g1",
+      "events": [
+        {
+          "event": "offer_made",
+          "data": {
+            "offer_id": 5,
+            "order_id": 4,
+            "lender_id": "lmvwp2jlc-lender-conc.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1356000",
+            "expires_at": "1793469381160838125",
+            "strategy": "concentration-aware"
+          }
+        }
+      ]
+    },
+    {
+      "act": "04",
+      "title": "Agent accepts cheapest valid offer: $0.60 from repayment-history",
+      "detail": {
+        "offers": [
+          {
+            "id": 4,
+            "order_id": 4,
+            "lender_id": "lmvwp2jlc-lender-hist.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "600000",
+            "expires_at": "1793469376240728209",
+            "strategy": "repayment-history",
+            "status": "Open",
+            "created_at": "1793469081160838125"
+          },
+          {
+            "id": 3,
+            "order_id": 4,
+            "lender_id": "lmvwp2jlc-lender-cov.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1179000",
+            "expires_at": "1793469370764381558",
+            "strategy": "escrow-coverage",
+            "status": "Open",
+            "created_at": "1793469076240728209"
+          },
+          {
+            "id": 5,
+            "order_id": 4,
+            "lender_id": "lmvwp2jlc-lender-conc.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "1356000",
+            "expires_at": "1793469381160838125",
+            "strategy": "concentration-aware",
+            "status": "Open",
+            "created_at": "1793469086535030179"
+          }
+        ]
+      },
+      "tx": "AWZwdBTRgRR3jCwLW29BQzZk8n1kaE46amMU7fFGQtxV",
+      "events": [
+        {
+          "event": "loan_funded",
+          "data": {
+            "loan_id": 1,
+            "order_id": 4,
+            "offer_id": 4,
+            "lender_id": "lmvwp2jlc-lender-hist.loca-mvwp1z4g.testnet",
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "vendor_id": "lmvwp2jlc-vendor.loca-mvwp1z4g.testnet",
+            "principal": "30000000",
+            "fee": "600000"
+          }
+        },
+        {
+          "event": "offer_released",
+          "data": {
+            "offer_id": 3,
+            "lender_id": "lmvwp2jlc-lender-cov.loca-mvwp1z4g.testnet"
+          }
+        },
+        {
+          "event": "offer_released",
+          "data": {
+            "offer_id": 5,
+            "lender_id": "lmvwp2jlc-lender-conc.loca-mvwp1z4g.testnet"
+          }
+        }
+      ]
+    },
+    {
+      "act": "04",
+      "title": "Vendor withdraws $30 paid directly by the loan",
+      "tx": "CCYjtF1eT6UnidnKYF82dZBpDwkhABKtFsjG7d9otrX3",
+      "events": [
+        {
+          "event": "withdrawn",
+          "data": {
+            "account_id": "lmvwp2jlc-vendor.loca-mvwp1z4g.testnet",
+            "amount": "30000000"
+          }
+        }
+      ]
+    },
+    {
+      "act": "04",
+      "title": "Agent delivers report (offline)",
+      "detail": {
+        "report": "# Agent payments volume on NEAR\n\n- **Net inflow**: 860 (sample 1)\n- **Top source chain**: 200 (sample 2)\n- **Active wallets**: 943 (sample 3)\n\n_Data: lmvwp2jlc-vendor.loca-mvwp1z4g.testnet. Written by the offline writer (no inference key set)._"
+      },
+      "tx": "BUAc95F2aurv62KLyS8zD8wsEdyn66goP1vDRiCnPcEd",
+      "events": [
+        {
+          "event": "order_delivered",
+          "data": {
+            "order_id": 4,
+            "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+            "deliverable_hash": "f5f61e5f73413f8d3bd4254ae8c4f55a64a7a240e4135d8f91c569cfdf9466bb"
+          }
+        }
+      ]
+    },
+    {
+      "act": "04",
+      "title": "Customer approves; escrow runs the repayment waterfall",
+      "tx": "6scX8jT9djAvm7ZXGhwWbq2LY5pQy8eUxbyThEbAfgTg",
+      "events": [
+        {
+          "event": "loan_repaid",
+          "data": {
+            "loan_id": 1,
+            "order_id": 4,
+            "lender_id": "lmvwp2jlc-lender-hist.loca-mvwp1z4g.testnet",
+            "paid_from_escrow": "30600000",
+            "paid_from_bond": "0",
+            "shortfall": "0"
+          }
+        },
+        {
+          "event": "order_settled",
+          "data": {
+            "order_id": 4,
+            "outcome": "approved",
+            "customer_refund": "0",
+            "to_lender": "30600000",
+            "to_agent": "69400000",
+            "lender_shortfall": "0"
+          }
+        }
+      ]
+    },
+    {
+      "act": "04",
+      "title": "Score 747 → 755",
+      "detail": {
+        "before": {
+          "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+          "version": "v0",
+          "score": 747,
+          "rated": true,
+          "components": [
+            {
+              "name": "revenue_continuity",
+              "weight_bps": 3000,
+              "value_bps": 5000
+            },
+            {
+              "name": "repayment_history",
+              "weight_bps": 2500,
+              "value_bps": 10000
+            },
+            {
+              "name": "fulfillment",
+              "weight_bps": 2000,
+              "value_bps": 10000
+            },
+            {
+              "name": "treasury_bond",
+              "weight_bps": 1000,
+              "value_bps": 1000
+            },
+            {
+              "name": "operator_controls",
+              "weight_bps": 1000,
+              "value_bps": 10000
+            },
+            {
+              "name": "customer_diversity",
+              "weight_bps": 500,
+              "value_bps": 7500
+            }
+          ],
+          "reason_codes": []
+        },
+        "after": {
+          "agent_id": "lmvwp2jlc-agent.loca-mvwp1z4g.testnet",
+          "version": "v0",
+          "score": 755,
+          "rated": true,
+          "components": [
+            {
+              "name": "revenue_continuity",
+              "weight_bps": 3000,
+              "value_bps": 5500
+            },
+            {
+              "name": "repayment_history",
+              "weight_bps": 2500,
+              "value_bps": 10000
+            },
+            {
+              "name": "fulfillment",
+              "weight_bps": 2000,
+              "value_bps": 10000
+            },
+            {
+              "name": "treasury_bond",
+              "weight_bps": 1000,
+              "value_bps": 1000
+            },
+            {
+              "name": "operator_controls",
+              "weight_bps": 1000,
+              "value_bps": 10000
+            },
+            {
+              "name": "customer_diversity",
+              "weight_bps": 500,
+              "value_bps": 6000
+            }
+          ],
+          "reason_codes": []
+        },
+        "settlement": [
+          {
+            "event": "loan_repaid",
+            "data": {
+              "loan_id": 1,
+              "order_id": 4,
+              "lender_id": "lmvwp2jlc-lender-hist.loca-mvwp1z4g.testnet",
+              "paid_from_escrow": "30600000",
+              "paid_from_bond": "0",
+              "shortfall": "0"
+            }
+          },
+          {
+            "event": "order_settled",
+            "data": {
+              "order_id": 4,
+              "outcome": "approved",
+              "customer_refund": "0",
+              "to_lender": "30600000",
+              "to_agent": "69400000",
+              "lender_shortfall": "0"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "act": "04",
+      "title": "Repeat borrower pays $0.60 vs $1.20 on the first loan",
+      "detail": {
+        "first": [
+          {
+            "strategy": "escrow-coverage",
+            "fee": "1371000"
+          },
+          {
+            "strategy": "repayment-history",
+            "fee": "1200000"
+          },
+          {
+            "strategy": "concentration-aware",
+            "fee": "1584000"
+          }
+        ],
+        "second": [
+          {
+            "strategy": "escrow-coverage",
+            "fee": "1179000"
+          },
+          {
+            "strategy": "repayment-history",
+            "fee": "600000"
+          },
+          {
+            "strategy": "concentration-aware",
+            "fee": "1356000"
+          }
+        ]
+      }
+    },
+    {
+      "act": "05",
+      "title": "Blocked: operator posing as customer (deposit credited back, no order)",
+      "error": "ERR_CUSTOMER_RELATED_PARTY",
+      "tx": "3amVoZLRCJoWThJWVdKqzCqoYLzv1SC7svJNtCfvuhkU",
+      "events": [
+        {
+          "event": "deposit_rejected",
+          "data": {
+            "beneficiary": "lmvwp2jlc-operator.loca-mvwp1z4g.testnet",
+            "sender_id": "lmvwp2jlc-operator.loca-mvwp1z4g.testnet",
+            "amount": "10000000",
+            "reason": "ERR_CUSTOMER_RELATED_PARTY"
+          }
+        }
+      ]
+    },
+    {
+      "act": "05",
+      "title": "Blocked: agent routes loan to its operator",
+      "error": "ERR_VENDOR_NOT_IN_POLICY",
+      "tx": "8Foe17FVy76Xxah8S7Ag6oVUcjovy996kCDoccoHNxkJ"
+    },
+    {
+      "act": "05",
+      "title": "Blocked: advance above 50% of escrow",
+      "error": "ERR_EXCEEDS_ADVANCE_RATE",
+      "tx": "FrxxRsbCah78oxzEQ3kawPPEye84ET8KpnCkv5kGhv62"
+    }
+  ]
+}
