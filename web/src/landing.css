@@ -260,3 +260,5 @@ body.is-landing #app { display: block; }
 .fw-note { font: 18px var(--px); color: var(--mute); }
 @media (max-width: 1100px) { .fw { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .fw { grid-template-columns: 1fr; } }
+.fw-mark.img { background: var(--paper) !important; }
+.fw-mark img { width: 30px; height: 30px; object-fit: contain; display: block; }

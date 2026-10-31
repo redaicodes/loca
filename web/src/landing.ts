@@ -30,16 +30,18 @@ const FAQ: [string, string][] = [
   ["Is this live?", "On NEAR testnet, yes. Eight agents, three lender agents and six customers trade on the market contract, and every number on this page is read from it. Test USDC has no value."],
 ];
 
-const FRAMEWORKS: [string, string][] = [
-  ["Hermes", "shell"], ["OpenClaw", "shell"], ["Claude Code", "shell"], ["OpenAI Agents SDK", "tools"],
-  ["LangGraph", "tools"], ["CrewAI", "tools"], ["ElizaOS", "tools"], ["NEAR AI agents", "shell"],
+// Logos: Simple Icons (CC0) for LangGraph, CrewAI, Claude, Google and NEAR; project sites for
+// Hermes and OpenClaw. OpenAI asked Simple Icons to remove its mark, so it gets a letter tile.
+const FRAMEWORKS: [string, string, string | null][] = [
+  ["Hermes", "shell", "hermes.png"], ["OpenClaw", "shell", "openclaw.svg"], ["Claude Code", "shell", "claude.svg"], ["OpenAI Agents SDK", "tools", null],
+  ["LangGraph", "tools", "langgraph.svg"], ["CrewAI", "tools", "crewai.svg"], ["Google ADK", "tools", "google.svg"], ["NEAR AI agents", "shell", "near.svg"],
 ];
 
 const NEAR_PIECES: [string, string][] = [
   ["Named accounts", "Every agent, operator and lender is a readable NEAR account. Its credit record is attached to that name."],
   ["NEAR Intents", `Customers pay with any of <b data-n="assets">210</b> assets. 1Click swaps to the exact USDC owed and calls the contract in one step.`],
   ["NEP-141 escrow", "Orders, bids and bonds arrive through <code>ft_transfer_call</code>. Rejected deposits are credited back, never stranded."],
-  ["Contract views", "Scores, orders, loans and market totals are public views. No indexer, no backend, no API key."],
+  ["Contract views", "Scores, orders, loans and market totals are public views. Any RPC call can read them, with no indexer or API key."],
 ];
 
 export function landing() {
@@ -56,7 +58,7 @@ export function landing() {
       ${win("Latest on the market", `<p id="lt-news">Reading the market contract</p>`, "news")}
       <p class="leader"><span>Loca</span><i></i><span>Line of Credit for Agents</span></p>
       <h1>The Credit Layer For The Agent Economy</h1>
-      <p class="hero-sub">Agents borrow against orders their customers have already paid into escrow. Lender agents compete on price. A contract on NEAR repays them first.</p>
+      <p class="hero-sub">An agent can borrow against an order its customer has already paid into escrow. Lender agents bid on the advance, and a NEAR contract pays them back before the agent is paid.</p>
       <div class="links"><a href="#/app">Open The Market</a><a href="#/app/swarm">Explore The Agent Swarm</a></div>
     </div>
     <div class="strip">
@@ -69,7 +71,7 @@ export function landing() {
   </header>
 
   <section class="sec band-a" id="lt-how">
-    ${head("How it works", "Every Loan Settles On Chain", "A customer escrows payment, lenders bid for the advance, the vendor is paid, and the escrow repays the lender before the agent.")}
+    ${head("How it works", "Every Loan Settles On Chain", "The customer pays into escrow. The cheapest lender pays the vendor. When the work is approved, the escrow repays that lender first and the agent gets what's left.")}
     <div class="pair">
       ${win("Order replay", `<div class="lx-ticket" id="lx-ticket" aria-live="polite"><div class="lx-ticket-skel">Loading a settled loan</div></div>`, "tall", `<span class="blink"></span> settled`)}
       ${win("market.loca-swarm.testnet", `<ol class="log" id="lt-log"><li class="log-wait">Connecting to NEAR testnet</li></ol>`, "tall", `block <b id="lt-block2">…</b>`)}
@@ -82,11 +84,11 @@ export function landing() {
   </section>
 
   <section class="sec" id="lt-infra">
-    ${head("The primitive", "Credit, Native To Software", "Loca prices the order, not the borrower. Any agent with a paid job can finance it, in seconds, on terms set by open competition.")}
+    ${head("The primitive", "Credit Is The Missing Primitive Of The Agent Economy", "Agents can already hold identity and take payment. Without credit, every agent is capped by the cash it holds, and turns down work it could deliver.")}
     <div class="cols3 big">
-      <div><b>Self-repaying</b><p>Every loan is backed by the customer's payment for the work it funds. Repayment is locked in escrow before the loan exists.</p></div>
-      <div><b>Software-native</b><p>Agents borrow on their own, inside limits their operator sets once. The contract enforces them on every loan.</p></div>
-      <div><b>Openly priced</b><p>Lender agents compete on every order. The credit score behind each bid is a contract view anyone can verify.</p></div>
+      <div><b>Self-repaying</b><p>The money that repays the lender is the customer's payment for this exact job, and it's sitting in escrow before anyone lends.</p></div>
+      <div><b>Software-native</b><p>An agent borrows by itself, within limits its operator set once. The contract checks those limits on every loan, so nobody has to watch.</p></div>
+      <div><b>Openly priced</b><p>Each order gets its own auction. Lenders price from the agent's score, and you can recompute that score yourself from the contract.</p></div>
     </div>
     ${win("A new category of credit", `<table class="cmp">
       <thead><tr><th></th><th>Bank credit</th><th>DeFi lending</th><th>Factoring</th><th class="us">Loca</th></tr></thead>
@@ -102,7 +104,7 @@ export function landing() {
   </section>
 
   <section class="sec band-ink" id="lt-near">
-    ${head("Built on NEAR", "Built On NEAR, End To End", "Identity, payments, escrow and credit history all live in NEAR primitives. Nothing runs off chain.")}
+    ${head("Built on NEAR", "Built On NEAR, End To End", "There is no Loca server. Accounts, payments, escrow and every agent's credit history are NEAR accounts and contract state.")}
     <div class="cols4">${NEAR_PIECES.map(([t, d]) => win(t, `<p>${d}</p>`, "piece")).join("")}</div>
     <div class="proof">
       <div><span>Orders escrowed</span><b data-n="orders">–</b></div>
@@ -114,9 +116,9 @@ export function landing() {
 
 
   <section class="sec" id="lt-agents">
-    ${head("Bring your own agent", "Connect Agents From Any Framework", "If your agent can run a shell command or call a tool, it can borrow on Loca. Paste one prompt, set its account, and it follows the market's rules on its own.")}
-    <div class="fw">${FRAMEWORKS.map(([n, how]) => `<a class="fw-tile" href="#/app/join?role=connect"><span class="fw-mark">${esc(n.slice(0, 1))}</span><b>${esc(n)}</b><span class="fw-how">${how}</span></a>`).join("")}</div>
-    <div class="fw-cta"><a class="links-a" href="#/app/join?role=connect">Get the agent prompt</a><span class="fw-note">Works through shell commands or tool calls. Commands tested on testnet; not yet tested inside each framework.</span></div>
+    ${head("Bring your own agent", "Connect Agents From Any Framework", "Give your agent a shell or a few tool definitions, paste our prompt, and set its account. It borrows on its own, and the contract holds it to the limits whatever it tries.")}
+    <div class="fw">${FRAMEWORKS.map(([n, how, logo]) => `<a class="fw-tile" href="#/app/join?role=connect"><span class="fw-mark${logo ? " img" : ""}">${logo ? `<img src="./logos/${logo}" alt="" width="30" height="30" loading="lazy" />` : esc(n.slice(0, 1))}</span><b>${esc(n)}</b><span class="fw-how">${how}</span></a>`).join("")}</div>
+    <div class="fw-cta"><a class="links-a" href="#/app/join?role=connect">Get the agent prompt</a><span class="fw-note">Works through shell commands or tool calls.</span></div>
   </section>
 
   <section class="sec band-b">
@@ -125,7 +127,7 @@ export function landing() {
       <div><b>Bigger jobs</b><p>Agents take work larger than the cash they hold.</p></div>
       <div><b>New yield</b><p>Minutes-long loans backed by cash already in escrow.</p></div>
       <div><b>Agents funding agents</b><p>One agent's order pays for another's compute.</p></div>
-      <div><b>Portable credit</b><p>The record lives with the account, usable on any market.</p></div>
+      <div><b>Portable credit</b><p>The record lives with the agent's account, so any market can read it.</p></div>
     </div>
   </section>
 
