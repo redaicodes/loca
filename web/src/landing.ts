@@ -1,156 +1,248 @@
-// Public landing page. Live numbers come from the market contract; outside statistics cite their source.
+// Public landing page. The hero replays real loans from the market contract; every number is live.
 
-import { CONTRACT, type FeedItem, type Store } from "./data";
-import { metrics, usdK } from "./pages";
-import { ICON, accountLink, esc } from "./ui";
+import { CONTRACT, type Loan, type Offer, type Order, type Store } from "./data";
+import { agentRows, metrics } from "./pages";
+import { EXPLORER_ACCOUNT } from "./data";
+import { LOGO, esc, label } from "./ui";
 
 const SOURCES = {
   quickbooks: "https://stacker.com/stories/small-business/small-businesses-are-owed-17500-average-how-fastest-paid-are-closing-gap",
   trm: "https://www.trmlabs.com/trm-tech-blog/whos-actually-paying-measuring-ai-agent-payments-onchain",
 };
 
-const stat = (id: string, k: string, note: string) =>
-  `<div class="lp-stat"><div class="lp-stat-v" id="${id}">–</div><div class="lp-stat-k">${k}</div><div class="lp-stat-n">${note}</div></div>`;
+const money = (raw: string | number, dp = 2) => `$${(Number(raw) / 1e6).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 
 export function landing() {
-  return `<div class="lp">
-  <nav class="lp-nav">
-    <a class="brand dark" href="#/"><span class="mark">L</span><b>LOCA</b></a>
-    <div class="lp-links">
-      <button data-scroll="lp-problem">Why</button>
-      <button data-scroll="lp-how">How it works</button>
-      <button data-scroll="lp-safety">Safety</button>
+  return `<div class="lx">
+  <nav class="lx-nav">
+    <a class="lx-logo" href="#/">${LOGO(30)}<span>LOCA</span></a>
+    <div class="lx-nav-r">
+      <a href="#/app">Market</a>
       <a href="#/app/swarm">Live swarm</a>
+      <a class="lx-btn sm" href="#/app">Open app</a>
     </div>
-    <a class="btn" href="#/app">Launch app</a>
   </nav>
 
-  <header class="lp-hero">
-    <div class="lp-hero-l">
-      <div class="lp-eyebrow"><i class="dot-live"></i>Live on NEAR testnet</div>
-      <h1>Working capital<br/>for AI agents.</h1>
-      <p class="lp-lede">AI agents win paid work, but they can't buy the data and compute to deliver it until the customer pays. LOCA lets an agent borrow against an order that is already paid into escrow, from lender agents that compete on price. The escrow repays the lender before the agent gets anything.</p>
-      <div class="lp-cta"><a class="btn big" href="#/app">Open the market</a><a class="btn ghost big" href="#/app/swarm">Watch the swarm</a></div>
-    </div>
-    <div class="lp-term">
-      <div class="lp-term-h"><span><i class="dot-live"></i> market.loca-swarm · testnet</span><span class="muted" id="lp-age">connecting…</span></div>
-      <div class="lp-term-stats">
-        <div><span class="k">Value locked</span><b id="lp-tvl">–</b></div>
-        <div><span class="k">Credit originated</span><b id="lp-orig">–</b></div>
-        <div><span class="k">Repaid</span><b id="lp-repay">–</b></div>
+  <header class="lx-hero">
+    <div class="lx-hero-copy">
+      <h1>Credit for the<br/>agent economy</h1>
+      <p>AI agents borrow against orders their customers have already paid for. Lenders compete on price. The escrow repays them first.</p>
+      <div class="lx-actions">
+        <a class="lx-btn" href="#/app">Open the market</a>
+        <a class="lx-link" href="#/app/swarm">Watch agents trade live</a>
       </div>
-      <ol class="lp-term-feed" id="lp-feed"><li class="muted">Reading the contract…</li></ol>
-      <div class="lp-term-f">Read straight from ${accountLink(CONTRACT, "the contract")}, no backend</div>
+    </div>
+    <div class="lx-ticket" id="lx-ticket" aria-live="polite">
+      <div class="lx-ticket-skel">Loading a live loan from NEAR testnet</div>
     </div>
   </header>
 
-  <section class="lp-band">
-    ${stat("lp-orders", "orders escrowed", "by customers, on chain")}
-    ${stat("lp-loans", "loans funded", "paid straight to vendors")}
-    ${stat("lp-fee", "avg fee per loan", "of principal, set by competing lenders")}
-    ${stat("lp-agents", "agents trading", "each with a LOCA Score")}
-    ${stat("lp-assets", "assets customers can pay with", "via NEAR Intents, live from 1Click")}
+  <section class="lx-numbers" id="lx-numbers">
+    <div><b data-n="escrow">–</b><span>escrowed by customers</span></div>
+    <div><b data-n="credit">–</b><span>lent to agents</span></div>
+    <div><b data-n="repaid">–</b><span>of loans repaid</span></div>
+    <div><b data-n="fee">–</b><span>average fee per loan</span></div>
   </section>
 
-  <section class="lp-sec" id="lp-problem">
-    <div class="lp-kicker">The problem</div>
-    <h2>Agents can sell work.<br/>They can't finance it.</h2>
-    <div class="lp-3">
-      <div class="lp-card">
-        <div class="lp-big">56%</div>
-        <p>of small businesses surveyed were waiting on unpaid invoices, owed <b>$17,500</b> on average. Every service business has a gap between doing the work and getting paid.</p>
-        <a class="src" href="${SOURCES.quickbooks}" target="_blank" rel="noopener">QuickBooks Small Business Late Payments Report 2025 ↗</a>
+  <section class="lx-dark">
+    <div class="lx-dark-in">
+      <h2>The order is the collateral.</h2>
+      <div class="lx-flow" id="lx-flow">
+        <div class="lx-node"><b>Customer</b><span>pays into escrow</span></div>
+        <div class="lx-edge"><i></i></div>
+        <div class="lx-node"><b>Lenders</b><span>bid for the advance</span></div>
+        <div class="lx-edge"><i></i></div>
+        <div class="lx-node"><b>Vendor</b><span>is paid the loan</span></div>
+        <div class="lx-edge"><i></i></div>
+        <div class="lx-node"><b>Escrow</b><span>repays the lender, then the agent</span></div>
       </div>
-      <div class="lp-card">
-        <div class="lp-big">$5–11K</div>
-        <p>a month of onchain payment volume that is genuinely agent-driven, by one analyst's estimate. Agents are starting to pay each other. Nothing yet lets them borrow.</p>
-        <a class="src" href="${SOURCES.trm}" target="_blank" rel="noopener">TRM Labs, Sept 2026 ↗</a>
-      </div>
-      <div class="lp-card">
-        <div class="lp-big">No file</div>
-        <p>An agent has no balance sheet, no credit history and no legal identity a bank recognises. A lender has nothing to price, so the agent turns down work it can't fund up front.</p>
-        <span class="src">Why LOCA prices the order, not the agent</span>
+      <div class="lx-rules">
+        <p><b>The agent never holds borrowed money.</b> Loans go straight to a vendor its operator approved.</p>
+        <p><b>Lenders are paid before the agent.</b> Settlement runs in a fixed order the contract enforces.</p>
+        <p><b>Operators put money at risk first.</b> A bond covers lender losses before anyone else.</p>
       </div>
     </div>
   </section>
 
-  <section class="lp-sec" id="lp-how">
-    <div class="lp-kicker">How it works</div>
-    <h2>Borrow against the order,<br/>not the agent.</h2>
-    <ol class="lp-steps">
-      <li><span>01</span><b>Customer escrows</b><p>The customer pays the agent's price into the LOCA contract, from NEAR or from any chain through NEAR Intents.</p></li>
-      <li><span>02</span><b>Agent requests an advance</b><p>Up to 50% of the escrow, to a vendor its human operator has approved, with a maximum fee.</p></li>
-      <li><span>03</span><b>Lender agents bid</b><p>Each lender reads the agent's onchain record and LOCA Score and posts a fully funded bid. The cheapest valid bid wins.</p></li>
-      <li><span>04</span><b>Vendor gets paid</b><p>The loan goes straight to the data or compute vendor. The agent never holds borrowed money.</p></li>
-      <li><span>05</span><b>Escrow repays</b><p>When the customer approves, or the dispute window ends, the contract repays the lender first, then the agent keeps the rest.</p></li>
-    </ol>
-    <div class="lp-note">Every repaid loan raises the agent's score, and its next loan gets cheaper. In our first testnet run the fee on the same $30 advance fell from $1.20 to $0.60 after one repayment.</div>
-  </section>
-
-  <section class="lp-sec" id="lp-safety">
-    <div class="lp-kicker">Safety</div>
-    <h2>Rules the contract enforces,<br/>not promises.</h2>
-    <div class="lp-grid">
-      ${[
-        ["Proceeds go to vendors", "Loans pay a vendor on both the operator's allow-list and the protocol list. Never the agent, never its operator."],
-        ["Lender is paid first", "Settlement runs a fixed waterfall: customer refund, lender principal and fee, then the agent."],
-        ["First-loss bond", "Operators post a bond that covers lenders before any loss. It stays locked while a loan is open."],
-        ["Related-party checks", "An agent's operator can't be its customer or its lender. Rejected deposits are credited back, never stranded."],
-        ["One lien per order", "An order backs one loan. Bids are funded when placed and checked for expiry when accepted."],
-        ["Deterministic score", "The LOCA Score is a contract view over onchain history. Anyone can recompute it."],
-      ].map(([t, d]) => `<div class="lp-rule">${ICON.shield}<div><b>${t}</b><p>${d}</p></div></div>`).join("")}
+  <section class="lx-product">
+    <div class="lx-product-copy">
+      <h2>Every agent builds a credit record.</h2>
+      <p>Each repaid loan raises an agent's LOCA Score, computed by the contract from its own history. Better scores get cheaper credit.</p>
+      <a class="lx-link" href="#/app/agents">See all agents</a>
+    </div>
+    <div class="lx-window">
+      <div class="lx-window-bar"><i></i><i></i><i></i><span>LOCA market · agents by score</span></div>
+      <table class="lx-board" id="lx-board"><tbody><tr><td>Loading</td></tr></tbody></table>
     </div>
   </section>
 
-  <section class="lp-sec">
-    <div class="lp-kicker">Who it's for</div>
-    <div class="lp-3">
-      <div class="lp-card"><h3>Agents and operators</h3><p>Take bigger orders without fronting costs. Set a spend policy and a bond once; the agent borrows inside those limits on its own.</p></div>
-      <div class="lp-card"><h3>Lenders</h3><p>Short-dated credit backed by customer cash already in escrow, priced by your own strategy, with fees paid at settlement.</p></div>
-      <div class="lp-card"><h3>Customers</h3><p>Pay from any chain. Your money sits in escrow until you approve, and you can dispute or cancel if the agent doesn't deliver.</p></div>
+  <section class="lx-why">
+    <h2>Why it matters</h2>
+    <div class="lx-why-grid">
+      <div><b>56%</b><p>of small businesses surveyed were waiting on unpaid invoices, owed $17,500 on average. Agents selling services face the same gap, with no bank to bridge it.</p><a href="${SOURCES.quickbooks}" target="_blank" rel="noopener">QuickBooks, 2025</a></div>
+      <div><b>$5–11K</b><p>a month of genuinely agent-driven payments onchain today. The market is early. Credit is one of the pieces it is missing.</p><a href="${SOURCES.trm}" target="_blank" rel="noopener">TRM Labs, Sept 2026</a></div>
+      <div><b data-n="assets">210</b><p>assets a customer can pay with. NEAR Intents converts them to the exact USDC owed and opens the order in one step.</p><a href="#/app/pay">Try a quote</a></div>
     </div>
   </section>
 
-  <section class="lp-sec lp-near">
-    <div><div class="lp-kicker">Why NEAR</div><h2>Built where agents already live.</h2></div>
-    <div class="lp-3">
-      <div><b>Named accounts</b><p>Every agent, operator and lender is a readable account like <code>atlas.loca-swarm…testnet</code>, so identity and history are legible.</p></div>
-      <div><b>NEAR Intents</b><p>Customers pay with ETH, SOL, BTC or stablecoins on other chains; 1Click delivers exact USDC into escrow and opens the order in one step.</p></div>
-      <div><b>Cheap, fast settlement</b><p>A full loan cycle is about ten transactions. On testnet each cost about 0.0005 NEAR in gas in our measurements.</p></div>
-    </div>
+  <section class="lx-cta">
+    <h2>Agents are trading on testnet now.</h2>
+    <div class="lx-actions"><a class="lx-btn light" href="#/app/swarm">Watch the swarm</a><a class="lx-link light" href="#/app">Open the market</a></div>
   </section>
 
-  <section class="lp-final">
-    <h2>See it running.</h2>
-    <p>Eight agents, three lenders and six customers are trading on testnet right now.</p>
-    <div class="lp-cta"><a class="btn big" href="#/app/swarm">Watch the swarm</a><a class="btn ghost big light" href="#/app">Open the market</a></div>
-  </section>
-
-  <footer class="lp-foot"><span><b>LOCA</b> · Line of Credit for Agents · built for NEAR Hackathon 2026</span><span>Hackathon prototype on testnet. Not audited. Test USDC has no value.</span></footer>
+  <footer class="lx-foot">
+    <span>LOCA, line of credit for agents. Built for NEAR Hackathon 2026.</span>
+    <span>Testnet prototype, not audited. <a href="${EXPLORER_ACCOUNT}${CONTRACT}" target="_blank" rel="noopener">Market contract</a></span>
+  </footer>
 </div>`;
 }
 
-export function updateLanding(s: Store, feed: FeedItem[], assets: number | null) {
+// ---------------------------------------------------------------- live numbers
+
+const shown = new Map<string, number>();
+let counted = false;
+
+function countTo(el: HTMLElement, to: number, fmt: (v: number) => string) {
+  const from = shown.get(el.dataset.n!) ?? 0;
+  shown.set(el.dataset.n!, to);
+  if (from === to) return void (el.textContent = fmt(to));
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return void (el.textContent = fmt(to));
+  const t0 = performance.now();
+  const dur = from === 0 ? 1400 : 600;
+  const step = (t: number) => {
+    const k = Math.min(1, (t - t0) / dur);
+    el.textContent = fmt(from + (to - from) * (1 - Math.pow(1 - k, 4)));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+export function updateLanding(s: Store, _feed: unknown, assets: number | null) {
+  if (!document.querySelector(".lx")) return;
   const m = metrics(s);
   const t = s.market.totals;
-  const set = (id: string, v: string) => {
-    const el = document.getElementById(id);
-    if (el && el.textContent !== v) {
-      el.textContent = v;
-      el.classList.add("bump");
-      setTimeout(() => el.classList.remove("bump"), 900);
-    }
+  const nums = document.getElementById("lx-numbers")!;
+  const run = () => {
+    const set = (k: string, v: number, fmt: (v: number) => string) => {
+      const el = document.querySelector<HTMLElement>(`[data-n="${k}"]`);
+      if (el) countTo(el, v, fmt);
+    };
+    const usd0 = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
+    set("escrow", Number(t.escrow_volume) / 1e6, usd0);
+    set("credit", Number(t.originated) / 1e6, usd0);
+    set("repaid", m.closed ? m.repayRate * 100 : 0, (v) => `${v.toFixed(1)}%`);
+    set("fee", m.avgFee * 100, (v) => `${v.toFixed(2)}%`);
+    if (assets) set("assets", assets, (v) => String(Math.round(v)));
   };
-  set("lp-tvl", `$${m.tvl.toLocaleString("en-US", { maximumFractionDigits: 0 })}`);
-  set("lp-orig", usdK(t.originated));
-  set("lp-repay", m.closed ? `${(m.repayRate * 100).toFixed(1)}%` : "–");
-  set("lp-orders", t.orders.toLocaleString("en-US"));
-  set("lp-loans", t.loans.toLocaleString("en-US"));
-  set("lp-fee", m.avgFee ? `${(m.avgFee * 100).toFixed(2)}%` : "–");
-  set("lp-agents", String(s.market.agents));
-  if (assets) set("lp-assets", String(assets));
-  const age = document.getElementById("lp-age");
-  if (age) age.textContent = `updated ${new Date().toLocaleTimeString("en-GB")}`;
-  const f = document.getElementById("lp-feed");
-  if (f) f.innerHTML = feed.slice(0, 7).map((x) => `<li><span class="mono muted">${new Date(x.at).toLocaleTimeString("en-GB")}</span>${esc(x.text)}</li>`).join("");
+  // Count up once, when the numbers first scroll into view; later polls just tick.
+  if (counted) run();
+  else {
+    new IntersectionObserver((entries, obs) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        counted = true;
+        run();
+        obs.disconnect();
+      }
+    }, { threshold: 0.4 }).observe(nums);
+  }
+  board(s);
+  ticket.feed(s);
 }
+
+function board(s: Store) {
+  const el = document.getElementById("lx-board");
+  if (!el) return;
+  el.innerHTML = `<thead><tr><th>Agent</th><th>Score</th><th>Repaid</th><th>Avg fee</th></tr></thead><tbody>${agentRows(s)
+    .slice(0, 6)
+    .map((r) => `<tr><td><b>${esc(label(r.agent.agent_id))}</b></td><td><span class="lx-score"><i style="width:${r.score.score / 10}%"></i></span>${r.score.score}</td><td>${r.agent.stats.loans_repaid + r.agent.stats.loans_repaid_with_bond}</td><td>${isNaN(r.avgFee) ? "–" : `${(r.avgFee / 100).toFixed(2)}%`}</td></tr>`)
+    .join("")}</tbody>`;
+}
+
+// ---------------------------------------------------------------- hero: replay a real loan
+
+type Story = { order: Order; loan: Loan; offers: Offer[] };
+
+const ticket = (() => {
+  let stories: Story[] = [];
+  let idx = 0;
+  let timer: number | undefined;
+  let started = false;
+
+  function pickStories(s: Store): Story[] {
+    return [...s.orders.values()]
+      .filter((o) => o.status === "Released" && o.loan_id !== null && o.offer_ids.length >= 2)
+      .sort((a, b) => b.id - a.id)
+      .slice(0, 12)
+      .map((order) => ({
+        order,
+        loan: s.loans.get(order.loan_id!)!,
+        offers: [...s.offers.values()].filter((f) => f.order_id === order.id).sort((a, b) => Number(a.fee) - Number(b.fee)),
+      }))
+      .filter((st) => st.loan && st.loan.status === "Repaid");
+  }
+
+  function render(st: Story) {
+    const { order, loan, offers } = st;
+    const maxFee = Math.max(...offers.map((o) => Number(o.fee)));
+    const toLender = Number(loan.repaid);
+    const toAgent = Number(order.amount) - toLender - Number(order.customer_refund);
+    return `<div class="lx-t-head"><span>Order ${order.id}</span><span class="lx-t-live">Settled on testnet</span></div>
+      <div class="lx-t-parties">${esc(label(order.customer_id))} <span>paid</span> ${esc(label(order.agent_id))}</div>
+      <div class="lx-t-amount">${money(order.amount)}</div>
+      <ol class="lx-t-steps">
+        <li data-step="1"><span class="lx-t-k">Held in escrow</span><span class="lx-t-v">${money(order.amount)}</span></li>
+        <li data-step="2" class="lx-t-bids"><span class="lx-t-k">Lenders bid to advance ${money(loan.principal)}</span>
+          ${offers.map((o) => `<div class="lx-bid${o.id === loan.offer_id ? " win" : ""}"><span>${esc(label(o.lender_id))}</span><span class="lx-bar"><i style="--w:${(Number(o.fee) / maxFee) * 100}%"></i></span><span>${money(o.fee)}</span></div>`).join("")}
+        </li>
+        <li data-step="3"><span class="lx-t-k">Paid to ${esc(label(loan.vendor_id))}</span><span class="lx-t-v">${money(loan.principal)}</span></li>
+        <li data-step="4"><span class="lx-t-k">Work delivered and approved</span><span class="lx-t-v ok">Released</span></li>
+        <li data-step="5" class="lx-t-split"><span class="lx-t-k">Escrow pays out</span>
+          <div class="lx-split"><i class="l" style="--w:${(toLender / Number(order.amount)) * 100}%"></i><i class="a" style="--w:${(toAgent / Number(order.amount)) * 100}%"></i></div>
+          <div class="lx-split-k"><span>${esc(label(loan.lender_id))} ${money(toLender)}</span><span>Agent keeps ${money(toAgent)}</span></div>
+        </li>
+      </ol>`;
+  }
+
+  function play() {
+    const host = document.getElementById("lx-ticket");
+    if (!host || !stories.length) return;
+    const st = stories[idx % stories.length];
+    idx++;
+    host.classList.remove("in");
+    host.innerHTML = render(st);
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const steps = [...host.querySelectorAll<HTMLElement>("[data-step]")];
+    if (reduce) steps.forEach((s) => s.classList.add("on"));
+    else {
+      requestAnimationFrame(() => host.classList.add("in"));
+      steps.forEach((s, i) => setTimeout(() => s.classList.add("on"), 500 + i * 900));
+    }
+    timer = window.setTimeout(() => {
+      if (!document.getElementById("lx-ticket")) return (started = false);
+      host.classList.add("out");
+      setTimeout(() => { host.classList.remove("out"); play(); }, 450);
+    }, reduce ? 8000 : 9000);
+  }
+
+  return {
+    feed(s: Store) {
+      stories = pickStories(s);
+      if (!document.getElementById("lx-ticket")) return;
+      if (!started && stories.length) {
+        started = true;
+        window.clearTimeout(timer);
+        play();
+      }
+    },
+    reset() {
+      started = false;
+      window.clearTimeout(timer);
+    },
+  };
+})();
+
+export const resetLanding = () => {
+  ticket.reset();
+  counted = false;
+  shown.clear();
+};

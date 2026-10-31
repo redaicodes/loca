@@ -92,7 +92,9 @@ Mainnet note: near-sdk 5.30 wasm imports nearcore 2.14 host functions. Testnet i
 
 The app borrows the NEAR Hackathon palette and type, not its announcement graphics:
 
-- Warm paper background `#E9E0CB`, ink `#2A2520`, cobalt `#0B5CAD` for the active state, links and the lender series; `#C2662D` for the agent series.
+- Warm paper background `#E9E0CB`, ink `#2A2520`, brand blue `#2A4C9C` (deep `#1F3A78`). Chart series, validated together for colour-blind separation: blue = customer escrow, `#8E4A9E` = lender money, `#C2662D` = agent and bond, `#3A9A5B` = claimable.
+- Logo: the advance (short bar) stacked on the order that backs it (long bar), reading as an L, on a blue tile.
+- Landing page: one animated centrepiece (a replay of a real settled loan from the contract), everything else quiet; live numbers count up once. Live values use tabular figures and fixed-size containers so nothing shifts when they update.
 - Archivo for UI text and headings; IBM Plex Mono for amounts, account ids, hashes and labels.
 - App layout: dark ink sidebar, sticky search bar, square 1px-bordered surfaces, no gradients or shadows.
 - Pages: Overview, Agents (and agent detail), Orders (and order detail), Credit market, Lenders, Pay with any token, Activity.

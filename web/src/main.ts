@@ -1,11 +1,11 @@
 import "./style.css";
 import { listTokens } from "../../src/intents/oneclick";
 import { CONTRACT, deriveFeed, latestBlock, loadStore, type FeedItem, type Store } from "./data";
-import { landing, updateLanding } from "./landing";
+import { landing, resetLanding, updateLanding } from "./landing";
 import { activity, agentDetail, agents, dashboard, lenders, market, orderDetail, orders } from "./pages";
 import { mountPay, pay } from "./pay";
 import { swarmPage, updateSwarm } from "./swarm-view";
-import { ICON, accountLink, esc, label, tooltips } from "./ui";
+import { ICON, LOGO, accountLink, esc, label, tooltips } from "./ui";
 
 const POLL_MS = 5000;
 
@@ -32,7 +32,7 @@ let lastRoute = "";
 
 const shell = () => `
 <aside class="side">
-  <a class="brand" href="#/"><span class="mark">L</span><span><b>LOCA</b><small>Line of credit for agents</small></span></a>
+  <a class="brand" href="#/">${LOGO(30)}<span><b>LOCA</b><small>Credit for agents</small></span></a>
   <nav>${NAV.map((n) => `<a href="#/app${n.path ? `/${n.path}` : ""}" data-nav="${n.path}">${n.icon}<span>${n.name}</span></a>`).join("")}</nav>
   <div class="side-foot">
     <div class="net"><i id="net-dot"></i><span>NEAR testnet</span></div>
@@ -53,6 +53,7 @@ const shell = () => `
 function setMode(next: "landing" | "app") {
   if (mode === next) return;
   mode = next;
+  resetLanding();
   document.body.className = next === "landing" ? "is-landing" : "";
   app.innerHTML = next === "landing" ? landing() : shell();
   if (next === "app") wireShell();

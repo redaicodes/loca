@@ -106,6 +106,10 @@ export const ICON = {
   copy: P('<rect x="7" y="7" width="10" height="10"/><path d="M13 4H4v9"/>'),
 };
 
+/** The LOCA mark: the advance (short bar) stacked on the order that backs it (long bar). Read together, an L. */
+export const LOGO = (size = 28) =>
+  `<svg class="logo" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#2A4C9C"/><rect x="8" y="9" width="7" height="6" rx="1.5" fill="#fff" opacity=".72"/><rect x="8" y="17" width="16" height="6" rx="1.5" fill="#fff"/></svg>`;
+
 export const empty = (title: string, body: string) =>
   `<div class="empty"><div class="empty-t">${esc(title)}</div><div class="muted">${body}</div></div>`;
 
