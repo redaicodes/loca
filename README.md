@@ -29,11 +29,25 @@ pnpm web:dev                # app at http://localhost:5173 (Vite picks the next 
 | (same run) | `[ 05 ] Blocked:` operator posing as customer (`ERR_CUSTOMER_RELATED_PARTY`), loan routed to operator (`ERR_VENDOR_NOT_IN_POLICY`), advance above 50% (`ERR_EXCEEDS_ADVANCE_RATE`) |
 | open `runs/sandbox-latest.json` | Every step with its tx hash and the LOCA events it emitted |
 | `pnpm intents:quote` | `[ OK ] ETH on Arbitrum: pay 0.0449… (~$101.26) → 100.0 USDC delivered`, plus SOL, BTC and Base USDC; an unlisted token shows `ROUTE_UNAVAILABLE`; a bad refund address shows `QUOTE_REJECTED` |
-| `pnpm web:dev` | The LOCA app, reading the testnet contract live: agents with score breakdowns, every order with its lifecycle, bids and repayment split, the credit market and guardrails, lender performance, live NEAR Intents checkout quotes, and the event log with NearBlocks links |
+| `pnpm web:dev` | Landing page with live market numbers; the market dashboard (value locked, originated, repayment and loss rates, leaderboard, lenders); the live swarm map; agent and order pages; NEAR Intents checkout quotes |
+
+## Live agent swarm (testnet)
+
+Eight AI service agents, six customers, three lender agents, three vendors and an arbiter trade on one LOCA market: [`market.loca-swarm-mvwu8dfo.testnet`](https://testnet.nearblocks.io/address/market.loca-swarm-mvwu8dfo.testnet). Every order, bid, loan, delivery, dispute, default and settlement is a real testnet transaction. Agents differ in price range, reliability and how often they borrow; customers approve, go silent (a keeper finalizes after the window), dispute (the arbiter rules) or cancel after a missed deadline. Lenders price each request with their strategy from the agent's onchain record.
+
+```sh
+pnpm faucet root            # faucet-funded swarm root account, key saved to .env (testnet only)
+pnpm faucet topup 2         # sweep two more faucet accounts into it
+pnpm swarm setup            # deploy a market + test USDC, create and register all participants
+pnpm swarm run 120          # run the economy for 120 minutes
+pnpm web:dev                # landing page at /, market dashboard at /#/app, live swarm at /#/app/swarm
+```
+
+The app reads everything from contract views: `get_market` (running totals: value locked, originated, outstanding, fees, defaults, bonds), `get_agents`, `get_orders`, `get_offer_list` and `get_loans`. A unit-test invariant checks the totals against state and against every token deposited.
 
 ## Testnet
 
-A completed run is already live. Contract: [`lmvwp2jlc-loca.loca-mvwp1z4g.testnet`](https://testnet.nearblocks.io/address/lmvwp2jlc-loca.loca-mvwp1z4g.testnet). Every transaction is listed in [docs/testnet-run.json](docs/testnet-run.json) and on the app's Activity page. Examples: [vendor paid by the loan](https://testnet.nearblocks.io/txns/HmTL4J53cKdnyN1M6cfQpg5hPMDnniDH1fcAntc1uEHt), [repayment waterfall](https://testnet.nearblocks.io/txns/GwXt5PZnTyhjzX7Bz61DZkWsGCjRfAEah3ZeDcT1rXeJ).
+The first scripted demo (contract v1, before the market totals views) is also on testnet. Contract: [`lmvwp2jlc-loca.loca-mvwp1z4g.testnet`](https://testnet.nearblocks.io/address/lmvwp2jlc-loca.loca-mvwp1z4g.testnet). Every transaction is listed in [docs/testnet-run.json](docs/testnet-run.json) and on the app's Activity page. Examples: [vendor paid by the loan](https://testnet.nearblocks.io/txns/HmTL4J53cKdnyN1M6cfQpg5hPMDnniDH1fcAntc1uEHt), [repayment waterfall](https://testnet.nearblocks.io/txns/GwXt5PZnTyhjzX7Bz61DZkWsGCjRfAEah3ZeDcT1rXeJ).
 
 To reproduce it:
 
@@ -61,7 +75,8 @@ escrow   ──waterfall──▶ lender principal + fee │ bond covers shortfa
 - **Score** ([score.rs](contracts/loca/src/score.rs)): `get_score(agent_id)` returns a 0–1000 score, components, weights and reason codes, computed only from onchain history.
 - **Lender agents** ([lenders.ts](src/agents/lenders.ts)): escrow-coverage, repayment-history and concentration-aware strategies. Deterministic, with the rationale logged.
 - **Intents adapter** ([oneclick.ts](src/intents/oneclick.ts)): asks 1Click for `EXACT_OUTPUT` USDC on NEAR, delivered to the LOCA contract with `customRecipientMsg`. 1Click then calls `ft_transfer_call` and the payment opens the order for the named `customer_id`. The adapter checks minimum received, slippage, deadline and that the message is untouched. Only status `SUCCESS` counts as funded; `REFUNDED` and `FAILED` are handled explicitly. The contract never panics on a deposit that breaks a business rule. It credits the beneficiary instead, so Intents deliveries cannot be stranded.
-- **App** ([web/](web/src/main.ts)): reads agents, orders, offers and loans from the live testnet contract, and the run log for event history. The Pay page requests live 1Click dry quotes from the browser.
+- **App** ([web/](web/src/main.ts)): landing page plus a dashboard that polls the market contract every few seconds and rebuilds the event stream from state changes. The Pay page requests live 1Click dry quotes from the browser.
+- **Swarm** ([scripts/swarm.ts](scripts/swarm.ts)): the multi-agent economy described above.
 - **Research agent** ([research.ts](src/agents/research.ts)): buys data from the vendor and writes the report, using NEAR AI Cloud when `NEAR_AI_API_KEY` is set and an offline writer otherwise.
 
 ## Threat model (summary)

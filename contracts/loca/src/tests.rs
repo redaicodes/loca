@@ -91,6 +91,22 @@ impl World {
             held += self.bal(a);
         }
         assert_eq!(held, self.deposited, "token conservation violated");
+        // The running totals must agree with state and with the contract's token balance.
+        let t = self.c.get_market().totals;
+        let mut escrow = 0u128;
+        for id in 0..self.c.next_order_id {
+            let o = self.c.get_order(id).unwrap();
+            if matches!(o.status, OrderStatus::Funded | OrderStatus::Delivered | OrderStatus::Disputed) {
+                escrow += o.amount.0;
+            }
+        }
+        assert_eq!(t.escrow_held.0, escrow, "escrow_held drift");
+        assert_eq!(t.bonds_held.0, self.c.get_agent(acc("agent.near")).unwrap().bond.0, "bonds_held drift");
+        let claimable: u128 = ACCOUNTS.iter().map(|a| self.bal(a)).sum();
+        assert_eq!(t.claimable.0, claimable, "claimable drift");
+        assert_eq!(t.escrow_held.0 + t.offers_open.0 + t.bonds_held.0 + t.claimable.0, self.deposited, "value locked drift");
+        let outstanding: u128 = self.c.get_loans(None, None).iter().filter(|l| l.status == LoanStatus::Active).map(|l| l.principal.0).sum();
+        assert_eq!(t.outstanding.0, outstanding, "outstanding drift");
     }
 }
 
@@ -149,6 +165,16 @@ fn happy_path_waterfall_and_score_improves() {
     assert!(after.score > before.score, "{} !> {}", after.score, before.score);
     assert!(before.reason_codes.contains(&"NO_CREDIT_HISTORY".to_string()));
     assert!(!after.reason_codes.contains(&"NO_CREDIT_HISTORY".to_string()));
+
+    let m = w.c.get_market();
+    assert_eq!(m.agents, 1);
+    assert_eq!((m.totals.orders, m.totals.orders_settled, m.totals.offers_made), (4, 4, 3));
+    assert_eq!(m.totals.escrow_volume, U128(usd(160)));
+    assert_eq!((m.totals.originated, m.totals.outstanding), (U128(usd(30)), U128(0)));
+    assert_eq!((m.totals.fees_paid, m.totals.repaid_to_lenders), (U128(usd(1)), U128(usd(31))));
+    assert_eq!(w.c.get_agents(None, None)[0].score.score, after.score);
+    assert_eq!(w.c.get_orders(Some(2), Some(10)).len(), 2);
+    assert_eq!(w.c.get_offer_list(None, None).len(), 3);
 }
 
 #[test]
@@ -323,6 +349,13 @@ fn lost_dispute_bond_covers_lender_then_default() {
     assert_eq!(w.c.get_order(order).unwrap().status, OrderStatus::Refunded);
     let s = w.c.get_score(acc("agent.near")).unwrap();
     assert!(s.reason_codes.contains(&"DEFAULT_ON_RECORD".to_string()));
+    let t = w.c.get_market().totals;
+    assert_eq!((t.loans, t.loans_defaulted, t.loans_repaid), (1, 1, 0));
+    assert_eq!(t.default_loss, U128(usd(21)));
+    assert_eq!(t.bond_drawn, U128(usd(10)));
+    assert_eq!(t.repaid_to_lenders, U128(usd(10)));
+    assert_eq!((t.orders_disputed, t.orders_refunded), (1, 1));
+    assert_eq!(t.fees_paid, U128(0));
     w.assert_conserved();
 }
 

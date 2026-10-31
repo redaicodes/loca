@@ -12,7 +12,9 @@
     "demo:testnet": "tsx scripts/demo.ts --network testnet",
     "intents:quote": "tsx scripts/intents-quote.ts",
     "web:dev": "vite web",
-    "web:build": "vite build web"
+    "web:build": "vite build web",
+    "swarm": "tsx scripts/swarm.ts",
+    "faucet": "tsx scripts/faucet.mts"
   },
   "dependencies": {
     "near-api-js": "^7.4.0",

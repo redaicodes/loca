@@ -1,127 +1,171 @@
 import "./style.css";
-import { CONTRACT, latestBlock, loadStore, view, watchAgent, type Agent, type Store } from "./data";
-import { activity, agentDetail, agents, lenders, market, orderDetail, orders, overview } from "./pages";
+import { listTokens } from "../../src/intents/oneclick";
+import { CONTRACT, deriveFeed, latestBlock, loadStore, type FeedItem, type Store } from "./data";
+import { landing, updateLanding } from "./landing";
+import { activity, agentDetail, agents, dashboard, lenders, market, orderDetail, orders } from "./pages";
 import { mountPay, pay } from "./pay";
+import { swarmPage, updateSwarm } from "./swarm-view";
 import { ICON, accountLink, esc, label, tooltips } from "./ui";
 
+const POLL_MS = 5000;
+
 const NAV = [
-  { path: "", name: "Overview", icon: ICON.overview },
+  { path: "", name: "Market", icon: ICON.overview },
+  { path: "swarm", name: "Live swarm", icon: ICON.activity },
   { path: "agents", name: "Agents", icon: ICON.agents },
   { path: "orders", name: "Orders", icon: ICON.orders },
-  { path: "market", name: "Credit market", icon: ICON.market },
+  { path: "market", name: "Credit auctions", icon: ICON.market },
   { path: "lenders", name: "Lenders", icon: ICON.lenders },
   { path: "pay", name: "Pay with any token", icon: ICON.pay },
-  { path: "activity", name: "Activity", icon: ICON.activity },
+  { path: "activity", name: "Activity", icon: ICON.search },
 ];
 
-document.querySelector("#app")!.innerHTML = `
+const app = document.querySelector("#app") as HTMLElement;
+let mode: "landing" | "app" | null = null;
+let store: Store | null = null;
+let feed: FeedItem[] = [];
+let loadError = "";
+let assets: number | null = null;
+const seen = new Map<string, number>();
+let known = new Set<string>();
+let lastRoute = "";
+
+const shell = () => `
 <aside class="side">
   <a class="brand" href="#/"><span class="mark">L</span><span><b>LOCA</b><small>Line of credit for agents</small></span></a>
-  <nav>${NAV.map((n) => `<a href="#/${n.path}" data-nav="${n.path}">${n.icon}<span>${n.name}</span></a>`).join("")}</nav>
+  <nav>${NAV.map((n) => `<a href="#/app${n.path ? `/${n.path}` : ""}" data-nav="${n.path}">${n.icon}<span>${n.name}</span></a>`).join("")}</nav>
   <div class="side-foot">
     <div class="net"><i id="net-dot"></i><span>NEAR testnet</span></div>
     <div class="muted small mono" id="block">connecting…</div>
-    <div class="small">${accountLink(CONTRACT, "Contract ↗")}</div>
+    <div class="small">${accountLink(CONTRACT, "Market contract ↗")}</div>
     <div class="muted small">Prototype · not audited</div>
   </div>
 </aside>
 <div class="main">
   <div class="topbar">
     <button class="menu" id="menu" aria-label="Menu">≡</button>
-    <form class="search" id="search">${ICON.search}<input name="q" placeholder="Look up an agent account or order #" autocomplete="off" spellcheck="false" /></form>
-    <div class="top-r"><span class="ro" data-tip="This dashboard only reads chain state. Transactions are sent by the agents and scripts.">Read-only</span><button class="btn ghost" id="refresh">Refresh</button></div>
+    <form class="search" id="search">${ICON.search}<input name="q" placeholder="Agent name or account, or order #" autocomplete="off" spellcheck="false" /></form>
+    <div class="top-r"><span class="ro" data-tip="This app only reads chain state. Transactions are sent by the agents themselves.">Read-only</span><a class="btn ghost" href="#/">About LOCA</a></div>
   </div>
   <main id="view" class="view"></main>
 </div>`;
 
-let store: Store | null = null;
-let loadError = "";
-const viewEl = document.querySelector("#view") as HTMLElement;
+function setMode(next: "landing" | "app") {
+  if (mode === next) return;
+  mode = next;
+  document.body.className = next === "landing" ? "is-landing" : "";
+  app.innerHTML = next === "landing" ? landing() : shell();
+  if (next === "app") wireShell();
+  else app.querySelectorAll<HTMLButtonElement>("[data-scroll]").forEach((b) => b.addEventListener("click", () => document.getElementById(b.dataset.scroll!)?.scrollIntoView({ behavior: "smooth" })));
+}
 
-function route() {
+function parse() {
   const raw = location.hash.replace(/^#\/?/, "");
   const [path, query = ""] = raw.split("?");
-  const params = new URLSearchParams(query);
-  const [section = "", id] = path.split("/").map(decodeURIComponent);
+  const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
+  return { parts, params: new URLSearchParams(query), raw };
+}
+
+/** Render the current route. `refresh` keeps scroll and leaves forms alone. */
+function route(refresh = false, fresh = new Set<string>()) {
+  const { parts, params, raw } = parse();
+  if (parts[0] !== "app") {
+    setMode("landing");
+    if (!refresh) window.scrollTo(0, 0);
+    if (store) updateLanding(store, feed, assets);
+    return;
+  }
+  setMode("app");
+  const section = parts[1] ?? "";
+  const id = parts[2];
   document.querySelectorAll<HTMLAnchorElement>("[data-nav]").forEach((a) => a.classList.toggle("on", a.dataset.nav === section));
   document.body.classList.remove("nav-open");
+  const view = document.querySelector("#view") as HTMLElement;
+  const same = raw === lastRoute;
+  lastRoute = raw;
 
-  if (section === "activity") return render(activity(params.get("event") ?? "all"));
-  if (!store) return render(loadError ? errorView() : `<div class="loading">Reading contract state from NEAR testnet…</div>`);
-  const s = store;
-  switch (section) {
-    case "agents": return render(id ? agentDetail(s, id) : agents(s));
-    case "orders": return render(id ? orderDetail(s, Number(id)) : orders(s, params.get("status") ?? "All"));
-    case "market": return render(market(s));
-    case "lenders": return render(lenders(s));
-    case "pay":
-      render(pay([...s.agents.keys()].map((k) => ({ id: k, name: label(k) }))));
-      return void mountPay();
-    default: return render(overview(s));
+  if (!store) {
+    view.innerHTML = loadError
+      ? `<div class="empty big"><div class="empty-t">Testnet RPC unreachable</div><div class="muted">${esc(loadError)}</div><button class="btn" onclick="location.reload()">Retry</button></div>`
+      : `<div class="loading">Reading the market from NEAR testnet…</div>`;
+    return;
   }
+  const s = store;
+  if (section === "pay") {
+    if (refresh && same) return; // keep the checkout form state
+    view.innerHTML = pay([...s.agents.keys()].map((k) => ({ id: k, name: label(k) })));
+    void mountPay();
+    return;
+  }
+  if (section === "swarm" && refresh && same && document.querySelector("#sw-counters")) {
+    updateSwarm(s, feed, fresh);
+    return;
+  }
+  const html =
+    section === "swarm" ? swarmPage(s, feed)
+    : section === "agents" ? (id ? agentDetail(s, id) : agents(s))
+    : section === "orders" ? (id ? orderDetail(s, Number(id)) : orders(s, params.get("status") ?? "All"))
+    : section === "market" ? market(s)
+    : section === "lenders" ? lenders(s)
+    : section === "activity" ? activity(feed, params.get("kind") ?? "all")
+    : dashboard(s, feed);
+  const y = window.scrollY;
+  view.innerHTML = html;
+  window.scrollTo(0, refresh && same ? y : 0);
 }
 
-function render(html: string) {
-  viewEl.innerHTML = html;
-  window.scrollTo(0, 0);
-}
-
-const errorView = () =>
-  `<div class="empty big"><div class="empty-t">Testnet RPC unreachable</div><div class="muted">${esc(loadError)}</div><button class="btn" onclick="location.reload()">Retry</button></div>`;
-
-async function refresh() {
-  const btn = document.querySelector("#refresh") as HTMLButtonElement;
-  btn.disabled = true;
+async function poll() {
   try {
-    store = await loadStore();
+    store = await loadStore(store ?? undefined);
     loadError = "";
+    feed = deriveFeed(store, seen, label);
+    const keys = new Set(feed.map((f) => f.key));
+    const fresh = known.size ? new Set([...keys].filter((k) => !known.has(k))) : new Set<string>();
+    known = keys;
+    route(true, fresh);
   } catch (e) {
     loadError = String(e);
+    if (!store) route(true);
   }
-  btn.disabled = false;
-  route();
 }
 
 async function tick() {
+  const el = document.querySelector("#block");
+  if (!el) return;
   try {
     const b = await latestBlock();
-    document.querySelector("#block")!.textContent = `block ${b.height.toLocaleString("en-US")}`;
+    el.textContent = `block ${b.height.toLocaleString("en-US")}`;
     document.querySelector("#net-dot")!.className = "on";
   } catch {
-    document.querySelector("#block")!.textContent = "RPC unreachable";
-    document.querySelector("#net-dot")!.className = "";
+    el.textContent = "RPC unreachable";
   }
 }
 
-document.querySelector("#search")!.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const input = (e.target as HTMLFormElement).q as HTMLInputElement;
-  const q = input.value.trim();
-  if (!q) return;
-  if (/^#?\d+$/.test(q)) return void (location.hash = `#/orders/${q.replace("#", "")}`);
-  const agent = await view<Agent | null>("get_agent", { agent_id: q }).catch(() => null);
-  if (agent && store && !store.agents.has(q)) {
-    watchAgent(q);
-    await refresh();
-  }
-  location.hash = `#/agents/${encodeURIComponent(q)}`;
-  input.value = "";
-});
+function wireShell() {
+  document.querySelector("#search")!.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = (e.target as HTMLFormElement).q as HTMLInputElement;
+    const q = input.value.trim().toLowerCase();
+    input.value = "";
+    if (!q) return;
+    if (/^#?\d+$/.test(q)) return void (location.hash = `#/app/orders/${q.replace("#", "")}`);
+    const hit = store && [...store.agents.keys()].find((k) => k === q || label(k).toLowerCase().includes(q) || k.startsWith(q));
+    location.hash = `#/app/agents/${encodeURIComponent(hit || q)}`;
+  });
+  document.querySelector("#view")!.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    if (t.closest("a, button")) return;
+    const row = t.closest("[data-href]") as HTMLElement | null;
+    if (row) location.hash = row.dataset.href!;
+  });
+  document.querySelector("#menu")!.addEventListener("click", () => document.body.classList.toggle("nav-open"));
+  void tick();
+}
 
-// Whole table rows act as links.
-viewEl.addEventListener("click", (e) => {
-  const t = e.target as HTMLElement;
-  if (t.closest("a, button")) return;
-  const row = t.closest("[data-href]") as HTMLElement | null;
-  if (row) location.hash = row.dataset.href!;
-});
-
-document.querySelector("#refresh")!.addEventListener("click", refresh);
-document.querySelector("#menu")!.addEventListener("click", () => document.body.classList.toggle("nav-open"));
-window.addEventListener("hashchange", route);
-
+window.addEventListener("hashchange", () => route());
 tooltips();
 route();
-refresh();
-tick();
-setInterval(tick, 5000);
+void poll();
+setInterval(poll, POLL_MS);
+setInterval(tick, 6000);
+listTokens().then((t) => { assets = t.length; if (mode === "landing" && store) updateLanding(store, feed, assets); }).catch(() => {});

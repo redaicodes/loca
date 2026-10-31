@@ -1,0 +1,103 @@
+{
+  "network": "testnet",
+  "createdAt": "2026-10-31T20:20:45.896Z",
+  "root": "loca-swarm-mvwu8dfo.testnet",
+  "contract": "market.loca-swarm-mvwu8dfo.testnet",
+  "token": "usdc.loca-swarm-mvwu8dfo.testnet",
+  "agents": [
+    {
+      "id": "atlas.loca-swarm-mvwu8dfo.testnet",
+      "name": "Atlas Research",
+      "service": "research briefs",
+      "operator": "northwind.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "quill.loca-swarm-mvwu8dfo.testnet",
+      "name": "Quill Translate",
+      "service": "document translation",
+      "operator": "northwind.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "forge.loca-swarm-mvwu8dfo.testnet",
+      "name": "Forge Code Review",
+      "service": "code audits",
+      "operator": "helix.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "echo.loca-swarm-mvwu8dfo.testnet",
+      "name": "Echo Transcribe",
+      "service": "audio transcription",
+      "operator": "helix.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "pixel.loca-swarm-mvwu8dfo.testnet",
+      "name": "Pixel Studio",
+      "service": "image generation",
+      "operator": "kite.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "ledger.loca-swarm-mvwu8dfo.testnet",
+      "name": "Ledger Books",
+      "service": "bookkeeping",
+      "operator": "kite.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "scout.loca-swarm-mvwu8dfo.testnet",
+      "name": "Scout Leads",
+      "service": "sales lead lists",
+      "operator": "orbit.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "nova.loca-swarm-mvwu8dfo.testnet",
+      "name": "Nova Support",
+      "service": "support triage",
+      "operator": "orbit.loca-swarm-mvwu8dfo.testnet"
+    }
+  ],
+  "operators": [
+    "northwind.loca-swarm-mvwu8dfo.testnet",
+    "helix.loca-swarm-mvwu8dfo.testnet",
+    "kite.loca-swarm-mvwu8dfo.testnet",
+    "orbit.loca-swarm-mvwu8dfo.testnet"
+  ],
+  "customers": [
+    "acme.loca-swarm-mvwu8dfo.testnet",
+    "bluefin.loca-swarm-mvwu8dfo.testnet",
+    "corvid.loca-swarm-mvwu8dfo.testnet",
+    "delta.loca-swarm-mvwu8dfo.testnet",
+    "evergreen.loca-swarm-mvwu8dfo.testnet",
+    "fjord.loca-swarm-mvwu8dfo.testnet"
+  ],
+  "lenders": [
+    {
+      "id": "cover-capital.loca-swarm-mvwu8dfo.testnet",
+      "name": "Cover Capital",
+      "strategy": "escrow-coverage"
+    },
+    {
+      "id": "track-fund.loca-swarm-mvwu8dfo.testnet",
+      "name": "Track Record Fund",
+      "strategy": "repayment-history"
+    },
+    {
+      "id": "spread-credit.loca-swarm-mvwu8dfo.testnet",
+      "name": "Spread Credit",
+      "strategy": "concentration-aware"
+    }
+  ],
+  "vendors": [
+    {
+      "id": "datahub.loca-swarm-mvwu8dfo.testnet",
+      "kind": "data"
+    },
+    {
+      "id": "gpu-pool.loca-swarm-mvwu8dfo.testnet",
+      "kind": "compute"
+    },
+    {
+      "id": "api-mart.loca-swarm-mvwu8dfo.testnet",
+      "kind": "api"
+    }
+  ],
+  "arbiter": "arbiter.loca-swarm-mvwu8dfo.testnet"
+}

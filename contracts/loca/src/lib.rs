@@ -8,7 +8,7 @@
 use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::{json, Value};
-use near_sdk::store::{LookupMap, LookupSet};
+use near_sdk::store::{LookupMap, LookupSet, Vector};
 use near_sdk::{
     env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
     PromiseError, PromiseOrValue,
@@ -40,6 +40,7 @@ enum StorageKey {
     Offers,
     Loans,
     Balances,
+    AgentIds,
 }
 
 #[near(contract_state)]
@@ -62,7 +63,18 @@ pub struct Loca {
     next_order_id: u64,
     next_offer_id: u64,
     next_loan_id: u64,
+    agent_ids: Vector<AccountId>,
+    totals: MarketTotals,
 }
+
+fn add(a: &mut U128, v: u128) {
+    a.0 += v;
+}
+fn sub(a: &mut U128, v: u128) {
+    a.0 -= v;
+}
+
+const MAX_PAGE: u32 = 100;
 
 fn emit(event: &str, data: Value) {
     let log = json!({ "standard": "loca", "version": "0.1.0", "event": event, "data": [data] });
@@ -106,6 +118,8 @@ impl Loca {
             next_order_id: 0,
             next_offer_id: 0,
             next_loan_id: 0,
+            agent_ids: Vector::new(StorageKey::AgentIds),
+            totals: MarketTotals::default(),
         }
     }
 
@@ -158,6 +172,7 @@ impl Loca {
             stats: Stats::default(),
         };
         self.agents.insert(agent_id.clone(), agent);
+        self.agent_ids.push(agent_id.clone());
         emit(
             "agent_registered",
             json!({ "agent_id": agent_id, "operator_id": operator_id, "profile_hash": profile_hash }),
@@ -251,6 +266,10 @@ impl Loca {
         };
         offer.status = OfferStatus::Accepted;
         order.loan_id = Some(loan_id);
+        sub(&mut self.totals.offers_open, offer.principal.0);
+        self.totals.loans += 1;
+        add(&mut self.totals.originated, offer.principal.0);
+        add(&mut self.totals.outstanding, offer.principal.0);
         agent.active_loans += 1;
         agent.stats.loans_taken += 1;
 
@@ -275,6 +294,7 @@ impl Loca {
         require!(env::predecessor_account_id() == offer.lender_id, "ERR_NOT_LENDER");
         require!(offer.status == OfferStatus::Open, "ERR_OFFER_NOT_OPEN");
         offer.status = OfferStatus::Withdrawn;
+        sub(&mut self.totals.offers_open, offer.principal.0);
         self.credit(&offer.lender_id, offer.principal.0);
         emit("offer_withdrawn", json!({ "offer_id": offer_id, "lender_id": offer.lender_id }));
         self.offers.insert(offer_id, offer);
@@ -318,6 +338,7 @@ impl Loca {
         require!(order.status == OrderStatus::Delivered, "ERR_NOT_DELIVERED");
         require!(now() < order.delivered_at.unwrap().0 + self.dispute_window_ns, "ERR_DISPUTE_WINDOW_CLOSED");
         order.status = OrderStatus::Disputed;
+        self.totals.orders_disputed += 1;
         emit("order_disputed", json!({ "order_id": order_id, "reason_hash": reason_hash }));
         self.orders.insert(order_id, order);
     }
@@ -349,6 +370,7 @@ impl Loca {
         let amount = self.balances.get(&account_id).copied().unwrap_or(0);
         require!(amount > 0, "ERR_NOTHING_TO_WITHDRAW");
         self.balances.insert(account_id.clone(), 0);
+        sub(&mut self.totals.claimable, amount);
         ext_ft::ext(self.token_id.clone())
             .with_attached_deposit(NearToken::from_yoctonear(1))
             .with_static_gas(GAS_FT_TRANSFER)
@@ -375,6 +397,7 @@ impl Loca {
         require!(agent.active_loans == 0, "ERR_ACTIVE_LOANS");
         require!(agent.bond.0 >= amount.0 && amount.0 > 0, "ERR_BOND_AMOUNT");
         agent.bond = U128(agent.bond.0 - amount.0);
+        sub(&mut self.totals.bonds_held, amount.0);
         self.credit(&agent.agent_id, amount.0);
         emit("bond_withdrawn", json!({ "agent_id": agent.agent_id, "amount": amount }));
         self.agents.insert(agent.agent_id.clone(), agent);
@@ -433,6 +456,49 @@ impl Loca {
     pub fn get_balance(&self, account_id: AccountId) -> U128 {
         U128(self.balances.get(&account_id).copied().unwrap_or(0))
     }
+
+    /// Market-wide totals in one call. Value locked = escrow_held + offers_open + bonds_held + claimable,
+    /// which always equals the contract's token balance.
+    pub fn get_market(&self) -> MarketView {
+        MarketView {
+            totals: self.totals.clone(),
+            agents: self.agent_ids.len(),
+            next_order_id: self.next_order_id,
+            next_offer_id: self.next_offer_id,
+            next_loan_id: self.next_loan_id,
+            block_timestamp: U64(now()),
+        }
+    }
+
+    /// Registered agents in registration order, each with its current score.
+    pub fn get_agents(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<AgentWithScore> {
+        let from = from_index.unwrap_or(0);
+        let to = (from + limit.unwrap_or(50).min(MAX_PAGE)).min(self.agent_ids.len());
+        (from..to)
+            .filter_map(|i| self.agent_ids.get(i))
+            .filter_map(|id| self.agents.get(id))
+            .map(|a| AgentWithScore { agent: a.clone(), score: score::compute(a) })
+            .collect()
+    }
+
+    /// Orders by id, `from_id` inclusive.
+    pub fn get_orders(&self, from_id: Option<u64>, limit: Option<u32>) -> Vec<Order> {
+        let from = from_id.unwrap_or(0);
+        let to = (from + limit.unwrap_or(50).min(MAX_PAGE) as u64).min(self.next_order_id);
+        (from..to).filter_map(|i| self.orders.get(&i).cloned()).collect()
+    }
+
+    pub fn get_offer_list(&self, from_id: Option<u64>, limit: Option<u32>) -> Vec<Offer> {
+        let from = from_id.unwrap_or(0);
+        let to = (from + limit.unwrap_or(50).min(MAX_PAGE) as u64).min(self.next_offer_id);
+        (from..to).filter_map(|i| self.offers.get(&i).cloned()).collect()
+    }
+
+    pub fn get_loans(&self, from_id: Option<u64>, limit: Option<u32>) -> Vec<Loan> {
+        let from = from_id.unwrap_or(0);
+        let to = (from + limit.unwrap_or(50).min(MAX_PAGE) as u64).min(self.next_loan_id);
+        (from..to).filter_map(|i| self.loans.get(&i).cloned()).collect()
+    }
 }
 
 #[near]
@@ -461,6 +527,7 @@ impl FungibleTokenReceiver for Loca {
                 let r = match self.agents.get(&agent_id).cloned() {
                     Some(mut agent) => {
                         agent.bond = U128(agent.bond.0 + amount.0);
+                        add(&mut self.totals.bonds_held, amount.0);
                         emit("bond_posted", json!({ "agent_id": agent_id, "from": sender_id, "amount": amount }));
                         self.agents.insert(agent_id, agent);
                         Ok(())
@@ -471,6 +538,7 @@ impl FungibleTokenReceiver for Loca {
             }
         };
         if let Err(reason) = result {
+            self.totals.deposits_rejected += 1;
             self.credit(&beneficiary, amount.0);
             emit(
                 "deposit_rejected",
@@ -504,6 +572,7 @@ impl Loca {
         }
         let bal = self.balances.get(account_id).copied().unwrap_or(0);
         self.balances.insert(account_id.clone(), bal + amount);
+        add(&mut self.totals.claimable, amount);
     }
 
     fn assert_vendor_allowed(&self, agent: &Agent, vendor_id: &AccountId) {
@@ -534,6 +603,9 @@ impl Loca {
             customer_refund: U128(0),
         };
         agent.stats.orders_received += 1;
+        self.totals.orders += 1;
+        add(&mut self.totals.escrow_volume, amount);
+        add(&mut self.totals.escrow_held, amount);
         let mut ids = self.agent_orders.get(&agent_id).cloned().unwrap_or_default();
         ids.push(id);
         self.agent_orders.insert(agent_id.clone(), ids);
@@ -576,6 +648,8 @@ impl Loca {
             created_at: U64(now()),
         };
         order.offer_ids.push(id);
+        self.totals.offers_made += 1;
+        add(&mut self.totals.offers_open, principal);
         self.offers.insert(id, offer);
         self.orders.insert(order_id, order);
         emit(
@@ -593,6 +667,7 @@ impl Loca {
             let mut offer = self.offer(*id);
             if offer.status == OfferStatus::Open {
                 offer.status = OfferStatus::Withdrawn;
+                sub(&mut self.totals.offers_open, offer.principal.0);
                 self.credit(&offer.lender_id, offer.principal.0);
                 emit("offer_released", json!({ "offer_id": id, "lender_id": offer.lender_id }));
                 self.offers.insert(*id, offer);
@@ -619,6 +694,18 @@ impl Loca {
             from_bond = shortfall.min(agent.bond.0);
             agent.bond = U128(agent.bond.0 - from_bond);
             shortfall -= from_bond;
+            let t = &mut self.totals;
+            sub(&mut t.outstanding, loan.principal.0);
+            sub(&mut t.bonds_held, from_bond);
+            add(&mut t.bond_drawn, from_bond);
+            add(&mut t.repaid_to_lenders, to_lender + from_bond);
+            if shortfall > 0 {
+                t.loans_defaulted += 1;
+                add(&mut t.default_loss, shortfall);
+            } else {
+                t.loans_repaid += 1;
+                add(&mut t.fees_paid, loan.fee.0);
+            }
             loan.repaid = U128(to_lender + from_bond);
             loan.recovered_from_bond = U128(from_bond);
             loan.closed_at = Some(U64(now()));
@@ -651,6 +738,14 @@ impl Loca {
         self.credit(&order.agent_id, agent_side);
 
         let earned = order.amount.0 - customer_refund;
+        sub(&mut self.totals.escrow_held, order.amount.0);
+        add(&mut self.totals.agent_revenue, agent_side);
+        add(&mut self.totals.customer_refunds, customer_refund);
+        if customer_refund == order.amount.0 {
+            self.totals.orders_refunded += 1;
+        } else {
+            self.totals.orders_settled += 1;
+        }
         agent.stats.revenue = U128(agent.stats.revenue.0 + earned);
         if customer_refund == 0 {
             agent.stats.orders_completed += 1;

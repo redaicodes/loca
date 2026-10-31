@@ -1,4 +1,4 @@
-import { EXPLORER_ACCOUNT, EXPLORER_TX, profileName } from "./data";
+import { CAST, EXPLORER_ACCOUNT, EXPLORER_TX } from "./data";
 
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -20,22 +20,20 @@ export function ago(ns: string | number) {
   return `${Math.round(s / 86400)}d ago`;
 }
 
-/** Roles the demo gives its sub-accounts, keyed by the name before the root account. */
-const ROLES: Record<string, string> = {
-  operator: "Atlas operator",
-  vendor: "Data vendor",
-  "cust-a": "Customer A",
-  "cust-b": "Customer B",
-  "cust-c": "Customer C",
-  "lender-cov": "Escrow-coverage lender",
-  "lender-hist": "Repayment-history lender",
-  "lender-conc": "Concentration-aware lender",
-  arbiter: "Arbiter",
-  usdc: "Test USDC",
-  loca: "LOCA contract",
-};
-export const role = (id: string) => id.replace(/^l[a-z0-9]+-/, "").replace(/\.loca-[a-z0-9]+\.testnet$/, "");
-export const label = (id: string) => profileName(id) ?? ROLES[role(id)] ?? id;
+const cap = (x: string) => x.replace(/(^|-)([a-z])/g, (_, d, c) => (d ? " " : "") + c.toUpperCase());
+const NAMES = new Map<string, string>([
+  ...CAST.agents.map((a) => [a.id, a.name] as [string, string]),
+  ...CAST.lenders.map((l) => [l.id, l.name] as [string, string]),
+  ...CAST.operators.map((o) => [o, cap(o.split(".")[0])] as [string, string]),
+  ...CAST.customers.map((c) => [c, cap(c.split(".")[0])] as [string, string]),
+  ...CAST.vendors.map((v) => [v.id, ({ datahub: "DataHub", "gpu-pool": "GPU Pool", "api-mart": "API Mart" } as Record<string, string>)[v.id.split(".")[0]] ?? v.id] as [string, string]),
+  [CAST.arbiter, "Arbiter"],
+  [CAST.contract, "LOCA market"],
+  [CAST.root, "Swarm keeper"],
+]);
+export const label = (id: string) => NAMES.get(id) ?? id;
+export const agentService = (id: string) => CAST.agents.find((a) => a.id === id)?.service;
+export const lenderStrategy = (id: string) => CAST.lenders.find((l) => l.id === id)?.strategy;
 
 /** Account cell: readable label with the full account id underneath. */
 export const acct = (id: string, href?: string) => {

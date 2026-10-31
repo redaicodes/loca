@@ -1,19 +1,29 @@
-import { CONTRACT, RUN, reportForOrder, rationaleFor, scoreHistory, profileService, stepsForOrder, type Agent, type Loan, type Order, type Offer, type ScoreReport, type Store } from "./data";
-import { REASON_TEXT, SCORE_LABELS, STRATEGY, ICON, acct, accountLink, ago, bps, empty, esc, fmtDate, label, pct, pill, strategyName, txLink, usd } from "./ui";
+import { CAST, CONTRACT, DEMO_RUN, type FeedItem, type Loan, type Offer, type Order, type ScoreReport, type Store } from "./data";
+import { REASON_TEXT, SCORE_LABELS, STRATEGY, ICON, acct, accountLink, agentService, ago, bps, empty, esc, fmtDate, label, pct, pill, strategyName, txLink, usd } from "./ui";
 
 const enc = encodeURIComponent;
-const agentHref = (id: string) => `#/agents/${enc(id)}`;
-const orderHref = (id: number) => `#/orders/${id}`;
+export const agentHref = (id: string) => `#/app/agents/${enc(id)}`;
+export const orderHref = (id: number) => `#/app/orders/${id}`;
+const n = (v: string | number) => Number(v) / 1e6;
+
+/** Compact dollars for headline figures: $12.4K. */
+export const usdK = (raw: string | number) => {
+  const v = n(raw);
+  return v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 10_000 ? `$${(v / 1e3).toFixed(1)}K` : `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+};
 
 export const head = (title: string, sub: string, right = "") =>
   `<header class="page-head"><div><h1>${title}</h1><p class="sub">${sub}</p></div>${right}</header>`;
-const card = (title: string, body: string, opts: { right?: string; foot?: string; cls?: string } = {}) =>
+export const card = (title: string, body: string, opts: { right?: string; foot?: string; cls?: string } = {}) =>
   `<section class="card ${opts.cls ?? ""}"><div class="card-h"><h2>${title}</h2>${opts.right ?? ""}</div><div class="card-b">${body}</div>${opts.foot ? `<div class="card-f">${opts.foot}</div>` : ""}</section>`;
-const kpi = (k: string, v: string, note = "", tip = "") =>
-  `<div class="kpi"${tip ? ` data-tip="${esc(tip)}"` : ""}><div class="k">${k}</div><div class="v">${v}</div>${note ? `<div class="n">${note}</div>` : ""}</div>`;
+export const kpi = (k: string, v: string, note = "", tip = "") =>
+  `<div class="kpi"${tip ? ` data-tip="${esc(tip)}"` : ""}><div class="k">${k}${tip ? ' <span class="q">?</span>' : ""}</div><div class="v">${v}</div>${note ? `<div class="n">${note}</div>` : ""}</div>`;
 
-const offersFor = (s: Store, orderId: number) => s.offers.filter((o) => o.order_id === orderId).sort((a, b) => Number(a.fee) - Number(b.fee));
+const sorted = <T extends { id: number }>(m: Map<number, T>) => [...m.values()].sort((a, b) => b.id - a.id);
+const offersFor = (s: Store, orderId: number) => [...s.offers.values()].filter((o) => o.order_id === orderId).sort((a, b) => Number(a.fee) - Number(b.fee));
 const loanFor = (s: Store, o: Order) => (o.loan_id !== null ? s.loans.get(o.loan_id) : undefined);
+const pastDeadline = (o: Order) => o.status === "Funded" && BigInt(o.deadline) < BigInt(Date.now()) * 1_000_000n;
+const ms = (v: string | null) => (v ? Number(BigInt(v) / 1_000_000n) : 0);
 
 /** How the escrow was split. Lender share counts only what came out of escrow; bond recoveries are separate. */
 function split(o: Order, loan?: Loan) {
@@ -24,14 +34,35 @@ function split(o: Order, loan?: Loan) {
   return { amount, refund, lender, fromBond, agent: settled ? amount - refund - lender : 0, settled };
 }
 
+/** Market metrics a DeFi reader expects, all derived from the contract's running totals. */
+export function metrics(s: Store) {
+  const t = s.market.totals;
+  const tvl = n(t.escrow_held) + n(t.offers_open) + n(t.bonds_held) + n(t.claimable);
+  const closed = t.loans_repaid + t.loans_defaulted;
+  const repaidPrincipal = n(t.repaid_to_lenders) - n(t.fees_paid);
+  return {
+    tvl,
+    originated: n(t.originated),
+    outstanding: n(t.outstanding),
+    escrowVolume: n(t.escrow_volume),
+    fees: n(t.fees_paid),
+    repayRate: closed ? t.loans_repaid / closed : 1,
+    lossRate: n(t.originated) ? n(t.default_loss) / n(t.originated) : 0,
+    avgFee: t.loans_repaid && repaidPrincipal > 0 ? n(t.fees_paid) / repaidPrincipal : 0,
+    bondCoverage: n(t.outstanding) ? n(t.bonds_held) / n(t.outstanding) : 0,
+    advanceRate: n(t.escrow_volume) ? n(t.originated) / n(t.escrow_volume) : 0,
+    closed,
+  };
+}
+
 // ---------------------------------------------------------------- charts
 
 function scoreBars(score: ScoreReport) {
   return `<div class="hbars">${score.components
     .map((c) => {
-      const max = c.weight_bps / 10; // points available out of 1000
+      const max = c.weight_bps / 10;
       const pts = Math.round((c.weight_bps * c.value_bps) / 1e5);
-      return `<div class="hbar" data-tip="${esc(`${SCORE_LABELS[c.name] ?? c.name}: ${pts} of ${max} points (${c.value_bps / 100}% of weight ${c.weight_bps / 100}%)`)}">
+      return `<div class="hbar" data-tip="${esc(`${SCORE_LABELS[c.name] ?? c.name}: ${pts} of ${max} points (${c.value_bps / 100}% of a ${c.weight_bps / 100}% weight)`)}">
         <span class="hl">${SCORE_LABELS[c.name] ?? c.name}<span class="w">${c.weight_bps / 100}%</span></span>
         <span class="track"><span class="fill" style="width:${c.value_bps / 100}%"></span></span>
         <span class="hv mono">${pts}<span class="muted">/${max}</span></span>
@@ -40,32 +71,13 @@ function scoreBars(score: ScoreReport) {
     .join("")}</div>`;
 }
 
-function scoreLine(points: { label: string; score: number }[]) {
-  if (points.length < 2) return empty("Not enough history", "The chart appears after the first repaid loan.");
-  const W = 560, H = 200, L = 40, R = 16, T = 16, B = 34;
-  const lo = 400, hi = 1000;
-  const x = (i: number) => L + (i * (W - L - R)) / (points.length - 1);
-  const y = (v: number) => T + ((hi - v) * (H - T - B)) / (hi - lo);
-  const grid = [400, 550, 700, 850, 1000]
-    .map((g) => `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" class="gl"/><text x="${L - 8}" y="${y(g) + 4}" class="ax" text-anchor="end">${g}</text>`)
-    .join("");
-  const path = points.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.score)}`).join("");
-  const dots = points
-    .map((p, i) => `<g data-tip="${esc(`${p.label}: score ${p.score}`)}"><circle cx="${x(i)}" cy="${y(p.score)}" r="14" class="hit"/><circle cx="${x(i)}" cy="${y(p.score)}" r="4.5" class="dot"/>
-      <text x="${x(i)}" y="${y(p.score) - 12}" class="dl" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${p.score}</text>
-      <text x="${x(i)}" y="${H - 10}" class="ax" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(p.label)}</text></g>`)
-    .join("");
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="LOCA Score over time: ${points.map((p) => p.score).join(", ")}">${grid}<path d="${path}" class="ln"/>${dots}</svg>`;
-}
-
-function bidBars(offers: Offer[], winnerId?: number, orderId?: number) {
+function bidBars(offers: Offer[], winnerId?: number) {
   const max = Math.max(...offers.map((o) => Number(o.fee)));
   return `<div class="hbars">${offers
     .map((o) => {
       const win = o.id === winnerId;
-      const why = orderId !== undefined ? rationaleFor(orderId, o.strategy).join(", ") : "";
-      return `<div class="hbar" data-tip="${esc(`${strategyName(o.strategy)} lender bid ${usd(o.fee)} on ${usd(o.principal)} (${(bps(o.fee, o.principal) / 100).toFixed(2)}%)${why ? `\nRationale: ${why}` : ""}`)}">
-        <span class="hl">${strategyName(o.strategy)}${win ? '<span class="won">won</span>' : ""}</span>
+      return `<div class="hbar" data-tip="${esc(`${label(o.lender_id)} (${strategyName(o.strategy)}) bid ${usd(o.fee)} on ${usd(o.principal)}: ${(bps(o.fee, o.principal) / 100).toFixed(2)}%`)}">
+        <span class="hl">${esc(label(o.lender_id))}${win ? '<span class="won">won</span>' : ""}</span>
         <span class="track"><span class="fill ${win ? "" : "muted"}" style="width:${(Number(o.fee) / max) * 100}%"></span></span>
         <span class="hv mono">${usd(o.fee)}</span>
       </div>`;
@@ -82,29 +94,60 @@ function waterfall(o: Order, loan?: Loan) {
       ${seg(s.refund, "c-refund", "Refunded to customer")}${seg(s.lender, "c-lender", "Lender: principal + fee")}${seg(s.agent, "c-agent", "Agent keeps")}</div>
     <div class="legend">
       ${s.refund ? `<span><i class="c-refund"></i>Customer refund <b class="mono">${usd(s.refund)}</b></span>` : ""}
-      <span><i class="c-lender"></i>Lender <b class="mono">${usd(s.lender)}</b></span>
+      ${loan ? `<span><i class="c-lender"></i>Lender <b class="mono">${usd(s.lender)}</b></span>` : ""}
       <span><i class="c-agent"></i>Agent <b class="mono">${usd(s.agent)}</b></span>
       ${s.fromBond ? `<span>From bond <b class="mono">${usd(s.fromBond)}</b></span>` : ""}
     </div>`;
 }
 
-function capacity(s: Store, agent: Agent, orders: Order[]) {
-  const cap = s.config.max_advance_bps;
-  const policyMax = agent.policy ? Number(agent.policy.max_principal) : 0;
-  // request_credit needs an expiry before the order deadline, so past-deadline orders cannot back a loan.
-  const nowNs = BigInt(Date.now()) * 1_000_000n;
-  const funded = orders.filter((o) => o.status === "Funded" && o.loan_id === null);
-  const eligible = funded.filter((o) => BigInt(o.deadline) > nowNs);
-  const lapsed = funded.length - eligible.length;
-  const rows = eligible.map((o) => ({ o, max: Math.min((Number(o.amount) * cap) / 10_000, policyMax) }));
-  return `<dl class="kv">
-      <dt>Per order</dt><dd>up to <b>${cap / 100}%</b> of the escrow</dd>
-      <dt>Per loan</dt><dd>${agent.policy ? `<b class="mono">${usd(policyMax)}</b> operator limit` : '<span class="muted">no policy: cannot borrow</span>'}</dd>
-      <dt>Open loans</dt><dd>${agent.active_loans} · bond ${agent.active_loans ? "locked" : "withdrawable"}</dd>
-    </dl>
-    <div class="k" style="margin:16px 0 8px">Orders it can borrow against now</div>
-    ${rows.length ? `<div class="mini">${rows.map(({ o, max }) => `<div><a href="${orderHref(o.id)}">Order #${o.id}</a><span class="mono">${usd(o.amount)} escrow</span><b class="mono">${usd(max)}</b></div>`).join("")}</div>`
-      : `<div class="muted small">None right now.${lapsed ? ` ${lapsed} funded order${lapsed > 1 ? "s are" : " is"} past ${lapsed > 1 ? "their deadlines" : "its deadline"}, so the customer can cancel for a refund.` : " Every funded order is settled or already pledged."}</div>`}`;
+/** Value locked, stacked by where the tokens sit. Order matches the validated palette adjacency. */
+function tvlBar(s: Store) {
+  const t = s.market.totals;
+  const parts = [
+    { k: "Customer escrow", v: n(t.escrow_held), c: "c-escrow", tip: "Payments held for orders not yet settled." },
+    { k: "Agent bonds", v: n(t.bonds_held), c: "c-bond", tip: "First-loss capital posted by operators. Drawn before lenders lose." },
+    { k: "Lender bids", v: n(t.offers_open), c: "c-offer", tip: "Fully funded offers waiting for an agent to accept." },
+    { k: "Claimable", v: n(t.claimable), c: "c-claim", tip: "Settled balances not yet withdrawn." },
+  ];
+  const total = parts.reduce((a, p) => a + p.v, 0) || 1;
+  return `<div class="stack tall">${parts.map((p) => (p.v > 0 ? `<span class="seg ${p.c}" style="flex:${p.v}" data-tip="${esc(`${p.k}: $${p.v.toFixed(2)} (${pct((p.v / total) * 100)}). ${p.tip}`)}"></span>` : "")).join("")}</div>
+    <div class="legend">${parts.map((p) => `<span><i class="${p.c}"></i>${p.k} <b class="mono">$${p.v.toLocaleString("en-US", { maximumFractionDigits: 0 })}</b></span>`).join("")}</div>`;
+}
+
+/** Single-series column chart over time buckets. */
+function columns(series: { t: number; v: number }[], fmt: (v: number) => string, title: string) {
+  const stepMs = series.length > 1 ? series[1].t - series[0].t : 600_000;
+  if (!series.some((p) => p.v)) return empty("No data yet", "");
+  const W = 520, H = 150, L = 6, B = 22, T = 18;
+  const max = Math.max(...series.map((p) => p.v), 1);
+  const bw = (W - L * 2) / series.length;
+  const hhmm = (t: number) => new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const bars = series
+    .map((p, i) => {
+      const h = ((H - B - T) * p.v) / max;
+      const x = L + i * bw;
+      const body = h > 0 ? `<path d="M${x + 2},${H - B} v${-Math.max(h - 4, 0)} q0,-4 4,-4 h${Math.max(bw - 12, 1)} q4,0 4,4 v${Math.max(h - 4, 0)} z" class="col"/>` : "";
+      return `<g data-tip="${esc(`${hhmm(p.t)}–${hhmm(p.t + stepMs)}: ${fmt(p.v)}`)}"><rect x="${x}" y="${T}" width="${bw}" height="${H - B - T}" class="hit"/>${body}</g>`;
+    })
+    .join("");
+  const every = Math.ceil(series.length / 6);
+  const ticks = series.map((p, i) => (i % every === 0 ? `<text x="${L + i * bw + 2}" y="${H - 6}" class="ax">${hhmm(p.t)}</text>` : "")).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}"><line x1="${L}" x2="${W - L}" y1="${H - B}" y2="${H - B}" class="gl"/>
+    <text x="${L}" y="11" class="ax">peak ${fmt(max)}</text>${bars}${ticks}</svg>`;
+}
+
+/** Time buckets sized to the market's age: 24 columns covering at least 30 minutes, at most a day. */
+function buckets<T>(items: T[], at: (x: T) => number, val: (x: T) => number, count = 24) {
+  const first = Math.min(...items.map(at).filter(Boolean), Date.now());
+  const minutes = [1, 2, 5, 10, 15, 30, 60].find((m) => m * count * 60_000 >= Date.now() - first) ?? 60;
+  const step = minutes * 60_000;
+  const end = Math.ceil(Date.now() / step) * step;
+  const out = Array.from({ length: count }, (_, i) => ({ t: end - (count - i) * step, v: 0 }));
+  for (const x of items) {
+    const i = Math.floor((at(x) - out[0].t) / step);
+    if (i >= 0 && i < count) out[i].v += val(x);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- tables
@@ -112,7 +155,7 @@ function capacity(s: Store, agent: Agent, orders: Order[]) {
 function ordersTable(s: Store, orders: Order[], showAgent = true) {
   if (!orders.length) return empty("No orders", "Orders appear when a customer escrows payment for an agent.");
   return `<div class="tbl-wrap"><table class="tbl">
-    <thead><tr><th>Order</th>${showAgent ? "<th>Agent</th>" : ""}<th>Customer</th><th class="num">Escrow</th><th>Status</th><th class="num">Advance</th><th class="num">Fee</th><th class="num">Created</th></tr></thead>
+    <thead><tr><th>Order</th>${showAgent ? "<th>Agent</th>" : ""}<th>Customer</th><th class="num">Escrow</th><th>Status</th><th class="num">Advance</th><th class="num">Fee</th><th class="num">Age</th></tr></thead>
     <tbody>${orders
       .map((o) => {
         const loan = loanFor(s, o);
@@ -121,8 +164,8 @@ function ordersTable(s: Store, orders: Order[], showAgent = true) {
           ${showAgent ? `<td>${esc(label(o.agent_id))}</td>` : ""}
           <td>${esc(label(o.customer_id))}</td>
           <td class="num mono">${usd(o.amount)}</td>
-          <td>${pill(o.status)}${o.status === "Funded" && BigInt(o.deadline) < BigInt(Date.now()) * 1_000_000n ? ' <span class="muted small" data-tip="The delivery deadline passed. The customer can cancel_order for a refund.">past deadline</span>' : ""}</td>
-          <td class="num mono">${loan ? usd(loan.principal) : o.credit_request ? `<span class="muted">req ${usd(o.credit_request.amount)}</span>` : '<span class="muted">–</span>'}</td>
+          <td>${pill(o.status)}${pastDeadline(o) ? ' <span class="muted small">past deadline</span>' : ""}</td>
+          <td class="num mono">${loan ? usd(loan.principal) : o.credit_request ? `<span class="muted">asked ${usd(o.credit_request.amount)}</span>` : '<span class="muted">–</span>'}</td>
           <td class="num mono">${loan ? `${usd(loan.fee)} <span class="muted">${(bps(loan.fee, loan.principal) / 100).toFixed(1)}%</span>` : '<span class="muted">–</span>'}</td>
           <td class="num muted">${ago(o.created_at)}</td>
         </tr>`;
@@ -130,8 +173,8 @@ function ordersTable(s: Store, orders: Order[], showAgent = true) {
       .join("")}</tbody></table></div>`;
 }
 
-function loansTable(s: Store, loans: Loan[]) {
-  if (!loans.length) return empty("No loans", "Loans appear when an agent accepts a lender's offer.");
+function loansTable(loans: Loan[]) {
+  if (!loans.length) return empty("No loans", "Loans appear when an agent accepts a lender's bid.");
   return `<div class="tbl-wrap"><table class="tbl">
     <thead><tr><th>Loan</th><th>Order</th><th>Lender</th><th>Paid to vendor</th><th class="num">Principal</th><th class="num">Fee</th><th class="num">Repaid</th><th>Status</th></tr></thead>
     <tbody>${loans
@@ -142,286 +185,274 @@ function loansTable(s: Store, loans: Loan[]) {
       .join("")}</tbody></table></div>`;
 }
 
-// ---------------------------------------------------------------- activity
-
-const EVENT_TEXT: Record<string, (d: any) => string> = {
-  agent_registered: (d) => `${label(d.agent_id)} registered, operated by ${label(d.operator_id)}`,
-  policy_set: (d) => `Spend policy v${d.version}: max ${usd(d.policy.max_principal)}, ${d.policy.allowed_vendors.length} vendor(s)`,
-  bond_posted: (d) => `${usd(d.amount)} first-loss bond posted for ${label(d.agent_id)}`,
-  order_funded: (d) => `${label(d.customer_id)} escrowed ${usd(d.amount)} for order #${d.order_id}`,
-  credit_requested: (d) => `Order #${d.order_id}: ${usd(d.amount)} advance requested for ${label(d.vendor_id)}, max fee ${usd(d.max_fee)}`,
-  offer_made: (d) => `${strategyName(d.strategy)} lender bid ${usd(d.fee)} on order #${d.order_id}`,
-  loan_funded: (d) => `Loan L-${d.loan_id}: ${usd(d.principal)} paid to ${label(d.vendor_id)} for ${usd(d.fee)}`,
-  offer_released: (d) => `Losing bid #${d.offer_id} returned to ${label(d.lender_id)}`,
-  withdrawn: (d) => `${label(d.account_id)} withdrew ${usd(d.amount)}`,
-  order_delivered: (d) => `Order #${d.order_id} delivered, hash ${String(d.deliverable_hash).slice(0, 10)}…`,
-  loan_repaid: (d) => `Loan L-${d.loan_id} repaid ${usd(d.paid_from_escrow)} from escrow`,
-  order_settled: (d) => `Order #${d.order_id} settled: ${usd(d.to_lender)} lender, ${usd(d.to_agent)} agent`,
-  deposit_rejected: (d) => `${usd(d.amount)} from ${label(d.sender_id)} refused (${d.reason}), credited back`,
-};
-type Row = { event: string; text: string; tx?: string; act: string; error?: boolean };
-export function activityRows(): Row[] {
-  const rows: Row[] = [];
-  for (const st of RUN.steps) {
-    if (st.events?.length) for (const e of st.events) rows.push({ event: e.event, text: EVENT_TEXT[e.event]?.(e.data) ?? e.event, tx: st.tx, act: st.act });
-    else if (st.error) rows.push({ event: "rejected", text: `${st.title.replace(/^Blocked: /, "")}: ${st.error}`, tx: st.tx, act: st.act, error: true });
-  }
-  return rows;
+export function agentRows(s: Store) {
+  const loans = [...s.loans.values()];
+  return [...s.agents.values()]
+    .map((r) => {
+      const mine = loans.filter((l) => l.agent_id === r.agent.agent_id && l.status === "Repaid");
+      const avgFee = mine.length ? mine.reduce((a, l) => a + bps(l.fee, l.principal), 0) / mine.length : NaN;
+      return { ...r, avgFee };
+    })
+    .sort((a, b) => b.score.score - a.score.score);
 }
-const activityList = (rows: Row[]) =>
-  `<ol class="feed">${rows
-    .map((r) => `<li class="${r.error ? "err" : ""}"><span class="ev mono">${esc(r.event)}</span><span class="tx-t">${esc(r.text)}</span>${txLink(r.tx)}</li>`)
+
+const FEED_ICON: Record<string, string> = { order: "◆", request: "↗", bid: "◇", loan: "●", delivered: "✓", settled: "■", refunded: "↺", disputed: "!", default: "✕" };
+export const feedList = (items: FeedItem[], fresh = new Set<string>()) =>
+  `<ol class="feed live">${items
+    .map((f) => `<li class="k-${f.kind}${fresh.has(f.key) ? " fresh" : ""}"><span class="fi">${FEED_ICON[f.kind]}</span><a class="tx-t" href="${orderHref(f.orderId)}">${esc(f.text)}</a><span class="muted small mono">${new Date(f.at).toLocaleTimeString("en-GB")}</span></li>`)
     .join("")}</ol>`;
+
+function lenderTable(s: Store) {
+  const loans = [...s.loans.values()];
+  const offers = [...s.offers.values()];
+  const rows = CAST.lenders.map((l) => {
+    const bids = offers.filter((o) => o.lender_id === l.id);
+    const won = loans.filter((x) => x.lender_id === l.id);
+    const fees = won.filter((x) => x.status === "Repaid").reduce((a, x) => a + n(x.fee), 0);
+    const deployed = won.reduce((a, x) => a + n(x.principal), 0);
+    const loss = won.filter((x) => x.status === "Defaulted").reduce((a, x) => a + n(x.principal) + n(x.fee) - n(x.repaid), 0);
+    const active = won.filter((x) => x.status === "Active").reduce((a, x) => a + n(x.principal), 0);
+    return { l, bids: bids.length, won: won.length, fees, deployed, loss, active, net: fees - loss };
+  });
+  return card("Lenders", `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Lender</th><th>Strategy</th><th class="num">Bids</th><th class="num">Won</th><th class="num">Win rate</th><th class="num">Lent</th><th class="num">Active</th><th class="num">Fees</th><th class="num">Losses</th><th class="num">Net</th></tr></thead><tbody>${rows
+    .map((r) => `<tr><td>${acct(r.l.id)}</td><td>${strategyName(r.l.strategy)}</td><td class="num mono">${r.bids}</td><td class="num mono">${r.won}</td><td class="num mono">${r.bids ? pct((r.won / r.bids) * 100, 0) : "–"}</td>
+      <td class="num mono">$${r.deployed.toFixed(0)}</td><td class="num mono">$${r.active.toFixed(0)}</td><td class="num mono">$${r.fees.toFixed(2)}</td><td class="num mono">$${r.loss.toFixed(2)}</td><td class="num mono strong${r.net < 0 ? " bad-t" : ""}">${r.net < 0 ? "−" : ""}$${Math.abs(r.net).toFixed(2)}</td></tr>`)
+    .join("")}</tbody></table></div>`, { foot: "Over the loans loaded in this view. Losses are principal + fee not recovered from escrow or bond." });
+}
 
 // ---------------------------------------------------------------- pages
 
-export function overview(s: Store) {
-  const loans = [...s.loans.values()].sort((a, b) => a.id - b.id);
-  const escrow = s.orders.reduce((a, o) => a + Number(o.amount), 0);
-  const principal = loans.reduce((a, l) => a + Number(l.principal), 0);
-  const closed = loans.filter((l) => l.status !== "Active");
-  const repaid = closed.filter((l) => l.status === "Repaid");
-  const fees = repaid.reduce((a, l) => a + Number(l.fee), 0);
-  const settled = s.orders.filter((o) => o.status === "Released").length;
-  const first = loans[0], last = loans[loans.length - 1];
+export function dashboard(s: Store, feed: FeedItem[]) {
+  const m = metrics(s);
+  const t = s.market.totals;
+  const orders = [...s.orders.values()];
+  const loans = [...s.loans.values()];
+  const agents = agentRows(s);
+  const feeMax = Math.max(...agents.map((a) => a.avgFee).filter((x) => !isNaN(x)), 1);
 
-  const costRows = loans
-    .map((l) => {
-      const r = bps(l.fee, l.principal);
-      const maxR = Math.max(...loans.map((x) => bps(x.fee, x.principal)));
-      return `<div class="hbar" data-tip="${esc(`Loan L-${l.id} on order #${l.order_id}: ${usd(l.fee)} on ${usd(l.principal)} = ${(r / 100).toFixed(2)}%`)}">
-        <span class="hl"><a href="${orderHref(l.order_id)}">Order #${l.order_id}</a><span class="w">L-${l.id}</span></span>
-        <span class="track"><span class="fill" style="width:${(r / maxR) * 100}%"></span></span>
-        <span class="hv mono">${(r / 100).toFixed(2)}%</span></div>`;
-    })
-    .join("");
-
-  const agentsRows = [...s.agents.values()]
-    .map(({ agent, score }) => `<tr data-href="${agentHref(agent.agent_id)}">
-      <td>${acct(agent.agent_id, agentHref(agent.agent_id))}</td>
-      <td class="num"><span class="score-sm">${score?.score ?? "–"}</span></td>
-      <td class="num mono">${agent.stats.orders_completed}</td><td class="num mono">${usd(agent.stats.revenue)}</td>
-      <td class="num mono">${agent.stats.loans_repaid}/${agent.stats.loans_taken}</td><td class="num mono">${usd(agent.bond)}</td></tr>`)
-    .join("");
-
-  return `${head("Overview", `Live state of the LOCA credit market on NEAR testnet.`)}
+  return `${head("Market", `Live credit market for AI agents on NEAR testnet. Every figure is read from <code>${esc(CONTRACT)}</code>.`, `<span class="live-tag"><i></i>Live</span>`)}
   <div class="kpis">
-    ${kpi("Escrow processed", usd(escrow, 0), `${s.orders.length} orders · ${settled} settled`)}
-    ${kpi("Credit advanced", usd(principal, 0), `${loans.length} loans, paid to vendors`)}
-    ${kpi("Repayment rate", closed.length ? pct((repaid.length / closed.length) * 100, 0) : "–", `${repaid.length} repaid · ${closed.length - repaid.length} defaulted`)}
-    ${kpi("Lender fees earned", usd(fees), repaid.length ? `avg ${(repaid.reduce((a, l) => a + bps(l.fee, l.principal), 0) / repaid.length / 100).toFixed(2)}% per loan` : "")}
-    ${kpi("Cost of credit", first && last && first !== last ? `${(bps(first.fee, first.principal) / 100).toFixed(1)}% → ${(bps(last.fee, last.principal) / 100).toFixed(1)}%` : "–", "first loan → latest loan")}
+    ${kpi("Value locked", `$${m.tvl.toLocaleString("en-US", { maximumFractionDigits: 0 })}`, "escrow + bids + bonds + claimable", "Tokens held by the contract right now. Always equals its token balance.")}
+    ${kpi("Credit originated", usdK(t.originated), `${t.loans} loans`, "Total principal advanced to vendors on behalf of agents.")}
+    ${kpi("Outstanding", usdK(t.outstanding), `${pct(m.advanceRate * 100, 0)} of escrow volume borrowed`, "Principal on loans not yet settled.")}
+    ${kpi("Repayment rate", m.closed ? pct(m.repayRate * 100, 1) : "–", `${t.loans_repaid} repaid · ${t.loans_defaulted} defaulted`, "Share of closed loans repaid in full, including from bonds.")}
+    ${kpi("Avg cost of credit", m.avgFee ? pct(m.avgFee * 100, 2) : "–", "fee per loan, of principal", "Fees paid divided by principal repaid. Each loan lasts minutes on testnet, so this is a per-loan fee, not an APR.")}
+  </div>
+  <div class="kpis">
+    ${kpi("Lender fees earned", `$${m.fees.toFixed(2)}`, "paid at settlement")}
+    ${kpi("Loss rate", pct(m.lossRate * 100, 2), `$${n(t.default_loss).toFixed(2)} unrecovered`, "Default losses after bonds, divided by principal originated.")}
+    ${kpi("Bond coverage", m.outstanding ? `${m.bondCoverage.toFixed(2)}×` : "–", "bonds ÷ outstanding", "First-loss capital available per dollar of open credit.")}
+    ${kpi("Escrow volume", usdK(t.escrow_volume), `${t.orders} orders · ${t.orders_settled} settled`)}
+    ${kpi("Agents", String(s.market.agents), `${t.orders_disputed} disputes · ${t.deposits_rejected} deposits refused`)}
+  </div>
+  ${card("Value locked", tvlBar(s), { foot: "Where every token in the contract sits. Hover a segment for detail." })}
+  <div class="grid g-12">
+    ${card("Escrow funded over time", columns(buckets(orders, (o) => ms(o.created_at), (o) => n(o.amount)), (v) => `$${v.toFixed(0)}`, "Escrow funded over time"), { cls: "span-6" })}
+    ${card("Credit advanced over time", columns(buckets(loans, (l) => ms(l.created_at), (l) => n(l.principal)), (v) => `$${v.toFixed(0)}`, "Credit advanced over time"), { cls: "span-6" })}
   </div>
   <div class="grid g-12">
-    ${card("Borrowing cost per loan", `<div class="chart-note">Fee as a share of principal. The repayment-history lender cut its price after the first loan was repaid.</div>${loans.length ? `<div class="hbars">${costRows}</div>` : empty("No loans yet", "")}${first && last && first !== last ? `<div class="callout"><div class="mono big-n">${usd(first.fee)} → ${usd(last.fee)}</div><div class="muted small">fee on the same ${usd(last.principal)} advance, one repaid loan later</div></div>` : ""}`, { cls: "span-5" })}
-    ${card("LOCA Score", scoreLine(scoreHistory()), { cls: "span-7", right: `<span class="muted small">snapshots from the demo run</span>` })}
+    ${card("Agent leaderboard", `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Agent</th><th class="num">Score</th><th class="num">Revenue</th><th class="num">Orders</th><th class="num">Repaid</th><th class="num">Defaults</th><th>Avg fee paid</th><th class="num">Bond</th></tr></thead><tbody>${agents
+      .map((a) => `<tr data-href="${agentHref(a.agent.agent_id)}">
+        <td><a href="${agentHref(a.agent.agent_id)}">${esc(label(a.agent.agent_id))}</a><div class="muted small">${esc(agentService(a.agent.agent_id) ?? "")}</div></td>
+        <td class="num"><span class="score-sm">${a.score.score}</span>${a.score.rated ? "" : '<div class="muted small">unrated</div>'}</td>
+        <td class="num mono">${usd(a.agent.stats.revenue, 0)}</td><td class="num mono">${a.agent.stats.orders_completed}</td>
+        <td class="num mono">${a.agent.stats.loans_repaid + a.agent.stats.loans_repaid_with_bond}</td>
+        <td class="num mono${a.agent.stats.loans_defaulted ? " bad-t" : ""}">${a.agent.stats.loans_defaulted}</td>
+        <td>${isNaN(a.avgFee) ? '<span class="muted">–</span>' : `<span class="inline-bar"><i style="width:${(a.avgFee / feeMax) * 100}%"></i></span><span class="mono small">${(a.avgFee / 100).toFixed(2)}%</span>`}</td>
+        <td class="num mono">${usd(a.agent.bond, 0)}</td></tr>`)
+      .join("")}</tbody></table></div>`, { cls: "span-8", foot: "Avg fee paid: mean fee on repaid loans, as a share of principal." })}
+    ${card("Live activity", feedList(feed.slice(0, 12)), { cls: "span-4", right: `<a class="small" href="#/app/activity">All →</a>` })}
   </div>
-  <div class="grid g-12">
-    ${card("Agents", `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Agent</th><th class="num">Score</th><th class="num">Orders</th><th class="num">Revenue</th><th class="num">Loans repaid</th><th class="num">Bond</th></tr></thead><tbody>${agentsRows}</tbody></table></div>`, { cls: "span-7", right: `<a href="#/agents" class="small">All agents →</a>` })}
-    ${card("Recent activity", activityList(activityRows().slice(-5).reverse()), { cls: "span-5", right: `<a href="#/activity" class="small">All →</a>` })}
-  </div>
-  ${card("Recent orders", ordersTable(s, s.orders.slice(0, 6)), { right: `<a href="#/orders" class="small">All orders →</a>` })}`;
+  ${lenderTable(s)}`;
 }
 
 export function agents(s: Store) {
-  const rows = [...s.agents.values()]
-    .map(({ agent, score }) => `<tr data-href="${agentHref(agent.agent_id)}">
-      <td>${acct(agent.agent_id, agentHref(agent.agent_id))}</td>
-      <td>${esc(label(agent.operator_id))}</td>
-      <td class="num"><span class="score-sm">${score?.score ?? "–"}</span></td>
-      <td>${score?.rated ? '<span class="pill s-done">Rated</span>' : '<span class="pill s-neutral">Unrated</span>'}</td>
-      <td class="num mono">${agent.stats.orders_completed}</td><td class="num mono">${agent.stats.unique_customers}</td>
-      <td class="num mono">${usd(agent.stats.revenue)}</td><td class="num mono">${agent.stats.loans_repaid} / ${agent.stats.loans_defaulted}</td>
-      <td class="num mono">${usd(agent.bond)}</td></tr>`)
-    .join("");
-  return `${head("Agents", "AI businesses with a LOCA ID. Identity, spend policy and track record are contract state.")}
-  ${card("Registered agents", `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Agent</th><th>Operator</th><th class="num">Score</th><th>Status</th><th class="num">Orders</th><th class="num">Customers</th><th class="num">Revenue</th><th class="num">Repaid / defaulted</th><th class="num">Bond</th></tr></thead><tbody>${rows}</tbody></table></div>`, {
-    foot: `The contract has no list view, so this shows agents from the demo run plus any you look up. Search for any account id in the top bar.`,
-  })}`;
+  return `${head("Agents", "AI service businesses with a LOCA ID. Identity, spend policy and track record are contract state.")}
+  <div class="agent-grid">${agentRows(s)
+    .map((r) => {
+      const st = r.agent.stats;
+      return `<a class="agent-card" href="${agentHref(r.agent.agent_id)}">
+        <div class="ac-top"><div class="avatar sm">${esc(label(r.agent.agent_id).slice(0, 1))}</div><div><div class="ac-name">${esc(label(r.agent.agent_id))}</div><div class="muted small">${esc(agentService(r.agent.agent_id) ?? "")} · ${esc(label(r.agent.operator_id))}</div></div>
+          <div class="ac-score">${r.score.score}</div></div>
+        <div class="ac-stats"><div><span class="k">Revenue</span><b class="mono">${usd(st.revenue, 0)}</b></div><div><span class="k">Orders</span><b class="mono">${st.orders_completed}</b></div><div><span class="k">Repaid</span><b class="mono">${st.loans_repaid + st.loans_repaid_with_bond}</b></div><div><span class="k">Defaults</span><b class="mono">${st.loans_defaulted}</b></div></div>
+        <div class="codes">${r.score.reason_codes.slice(0, 2).map((c) => `<span class="code">${esc(c)}</span>`).join("") || '<span class="code ok">No adverse codes</span>'}</div>
+      </a>`;
+    })
+    .join("")}</div>`;
+}
+
+function feeDots(pts: { v: number; id: number; ok: boolean }[]) {
+  const W = 760, H = 170, L = 40, R = 12, T = 14, B = 14;
+  const max = Math.max(8, ...pts.map((p) => p.v));
+  const x = (i: number) => L + (pts.length === 1 ? (W - L - R) / 2 : (i * (W - L - R)) / (pts.length - 1));
+  const y = (v: number) => T + ((max - v) * (H - T - B)) / max;
+  const grid = [0, max / 2, max].map((g) => `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" class="gl"/><text x="${L - 6}" y="${y(g) + 4}" text-anchor="end" class="ax">${g.toFixed(1)}%</text>`).join("");
+  const dots = pts.map((p, i) => `<g data-tip="${esc(`Loan L-${p.id}: fee ${p.v.toFixed(2)}% of principal${p.ok ? "" : " (defaulted)"}`)}"><circle cx="${x(i)}" cy="${y(p.v)}" r="10" class="hit"/><circle cx="${x(i)}" cy="${y(p.v)}" r="4.5" class="${p.ok ? "dot" : "dot hollow"}"/></g>`).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Fee per loan, oldest to newest">${grid}${dots}</svg>`;
 }
 
 export function agentDetail(s: Store, id: string) {
   const rec = s.agents.get(id);
   if (!rec) return `${head("Agent not found", esc(id))}${card("No LOCA ID", empty("This account is not registered", `<code>${esc(id)}</code> has not called <code>register_agent</code> on ${esc(CONTRACT)}.`))}`;
   const { agent, score } = rec;
-  const orders = s.orders.filter((o) => o.agent_id === id);
-  const loans = [...s.loans.values()].filter((l) => l.agent_id === id).sort((a, b) => b.id - a.id);
-  const codes = score?.reason_codes ?? [];
-  const isDemo = id === RUN.finalState.agent.agent_id;
+  const orders = sorted(s.orders).filter((o) => o.agent_id === id);
+  const loans = sorted(s.loans).filter((l) => l.agent_id === id);
+  const feePts = loans.slice().reverse().filter((l) => l.status !== "Active").map((l) => ({ v: bps(l.fee, l.principal) / 100, id: l.id, ok: l.status === "Repaid" }));
+  const st = agent.stats;
 
-  return `<div class="crumbs"><a href="#/agents">Agents</a> / ${esc(label(id))}</div>
+  return `<div class="crumbs"><a href="#/app/agents">Agents</a> / ${esc(label(id))}</div>
   <header class="entity">
     <div class="avatar">${esc(label(id).slice(0, 1))}</div>
     <div class="who">
       <h1>${esc(label(id))}</h1>
-      <div class="sub">${esc(profileService(id) ?? "AI agent")} · registered ${fmtDate(agent.registered_at)}</div>
+      <div class="sub">${esc(agentService(id) ?? "AI agent")} · operated by ${esc(label(agent.operator_id))} · registered ${fmtDate(agent.registered_at)}</div>
       <div class="ids"><span class="mono">${esc(id)}</span><button class="icon-btn" data-copy="${esc(id)}" title="Copy account id">${ICON.copy}</button>${accountLink(id, "Explorer")}</div>
     </div>
     <div class="score-box" data-tip="${esc("Deterministic: computed by the contract view get_score from onchain history only.")}">
-      <div class="k">LOCA Score ${esc(score?.version ?? "")}</div>
-      <div class="big">${score?.score ?? "–"}<span>/1000</span></div>
-      <div>${score?.rated ? '<span class="pill s-done">Rated</span>' : '<span class="pill s-neutral">Unrated</span>'}</div>
+      <div class="k">LOCA Score ${esc(score.version)}</div>
+      <div class="big">${score.score}<span>/1000</span></div>
+      <div>${score.rated ? '<span class="pill s-done">Rated</span>' : '<span class="pill s-neutral">Unrated</span>'}</div>
     </div>
   </header>
-
   <div class="kpis">
-    ${kpi("Revenue", usd(agent.stats.revenue), `${agent.stats.orders_completed} completed orders`)}
-    ${kpi("Customers", String(agent.stats.unique_customers), `${agent.stats.orders_refunded} refunded · ${agent.stats.disputes_lost} disputes lost`)}
-    ${kpi("Loans", `${agent.stats.loans_repaid} / ${agent.stats.loans_taken}`, `repaid · ${agent.active_loans} active · ${agent.stats.loans_defaulted} defaulted`)}
-    ${kpi("Principal repaid", usd(agent.stats.principal_repaid), `default loss ${usd(agent.stats.default_loss)}`)}
-    ${kpi("First-loss bond", usd(agent.bond), "covers lenders before any default", "Posted by the operator. Drawn to repay a lender if the escrow falls short. Locked while a loan is active.")}
+    ${kpi("Revenue", usd(st.revenue), `${st.orders_completed} completed orders`)}
+    ${kpi("Customers", String(st.unique_customers), `${st.orders_refunded} refunded · ${st.disputes_lost} disputes lost`)}
+    ${kpi("Loans", `${st.loans_repaid + st.loans_repaid_with_bond} / ${st.loans_taken}`, `repaid · ${agent.active_loans} active · ${st.loans_defaulted} defaulted`)}
+    ${kpi("Principal repaid", usd(st.principal_repaid), `default loss ${usd(st.default_loss)}`)}
+    ${kpi("First-loss bond", usd(agent.bond), "covers lenders before any loss", "Posted by the operator. Drawn to repay a lender if the escrow falls short. Locked while a loan is active.")}
   </div>
-
   <div class="grid g-12">
-    ${card("Score breakdown", `${scoreBars(score!)}<div class="codes">${codes.length ? codes.map((c) => `<span class="code" data-tip="${esc(REASON_TEXT[c] ?? c)}">${esc(c)}</span>`).join("") : `<span class="code ok">${ICON.check} No adverse reason codes</span>`}</div>`, {
+    ${card("Score breakdown", `${scoreBars(score)}<div class="codes">${score.reason_codes.length ? score.reason_codes.map((c) => `<span class="code" data-tip="${esc(REASON_TEXT[c] ?? c)}">${esc(c)}</span>`).join("") : `<span class="code ok">${ICON.check} No adverse reason codes</span>`}</div>`, {
       cls: "span-7", foot: "Weights are prototype rules, not a validated credit model.",
     })}
     ${card("Controls", `<dl class="kv">
       <dt>Operator</dt><dd>${acct(agent.operator_id)}</dd>
-      <dt>Spend policy</dt><dd>${agent.policy ? `v${agent.policy_version} · max <b class="mono">${usd(agent.policy.max_principal)}</b> per loan` : '<span class="muted">none set</span>'}</dd>
-      <dt>Allowed vendors</dt><dd>${agent.policy?.allowed_vendors.map((v) => acct(v)).join("") || '<span class="muted">–</span>'}</dd>
+      <dt>Spend policy</dt><dd>v${agent.policy_version} · max <b class="mono">${usd(agent.policy.max_principal)}</b> per loan</dd>
+      <dt>Allowed vendors</dt><dd>${agent.policy.allowed_vendors.map((v) => acct(v)).join("") || '<span class="muted">–</span>'}</dd>
       <dt>Loan proceeds</dt><dd>Paid to the vendor, never to the agent</dd>
       <dt>Profile hash</dt><dd class="mono hash">${esc(agent.profile_hash)}</dd>
     </dl>`, { cls: "span-5" })}
   </div>
-  <div class="grid g-12">
-    ${card("Score history", isDemo ? scoreLine(scoreHistory()) : empty("No snapshots", "History is recorded for the demo agent only."), { cls: "span-7", right: `<span class="muted small">snapshots from the demo run</span>` })}
-    ${card("Borrowing capacity", capacity(s, agent, orders), { cls: "span-5" })}
-  </div>
-  ${card(`Orders <span class="count">${orders.length}</span>`, ordersTable(s, orders, false))}
-  ${card(`Loans <span class="count">${loans.length}</span>`, loansTable(s, loans))}`;
+  ${card("Fee paid per closed loan", feePts.length ? feeDots(feePts) : empty("No closed loans yet", "Each dot will be one loan's fee as a share of principal."), { foot: "Oldest to newest. Hollow dots defaulted." })}
+  ${card(`Orders <span class="count">${orders.length}</span>`, ordersTable(s, orders.slice(0, 25), false))}
+  ${card(`Loans <span class="count">${loans.length}</span>`, loansTable(loans.slice(0, 25)))}`;
 }
 
 const STATUS_ORDER = ["All", "Funded", "Delivered", "Disputed", "Released", "Refunded"];
 export function orders(s: Store, filter = "All") {
-  const counts = Object.fromEntries(STATUS_ORDER.map((st) => [st, st === "All" ? s.orders.length : s.orders.filter((o) => o.status === st).length]));
+  const all = sorted(s.orders);
+  const counts = Object.fromEntries(STATUS_ORDER.map((st) => [st, st === "All" ? all.length : all.filter((o) => o.status === st).length]));
   const tabs = STATUS_ORDER.filter((st) => st === "All" || counts[st])
-    .map((st) => `<a class="tab ${st === filter ? "on" : ""}" href="#/orders${st === "All" ? "" : `?status=${st}`}">${st === "Released" ? "Settled" : st}<span>${counts[st]}</span></a>`)
+    .map((st) => `<a class="tab ${st === filter ? "on" : ""}" href="#/app/orders${st === "All" ? "" : `?status=${st}`}">${st === "Released" ? "Settled" : st}<span>${counts[st]}</span></a>`)
     .join("");
-  const list = filter === "All" ? s.orders : s.orders.filter((o) => o.status === filter);
-  return `${head("Orders", "Customer payments held in escrow. Each one can back a single advance, and settles through the repayment waterfall.")}
+  const list = (filter === "All" ? all : all.filter((o) => o.status === filter)).slice(0, 100);
+  return `${head("Orders", `Customer payments held in escrow. ${s.market.totals.orders} orders so far; the most recent are listed.`)}
   <div class="tabs">${tabs}</div>
   ${card("", ordersTable(s, list), { cls: "flush" })}`;
 }
 
 export function orderDetail(s: Store, id: number) {
-  const o = s.orders.find((x) => x.id === id);
-  if (!o) return `${head(`Order #${id}`, "Not found")}${card("", empty("No such order", "It may belong to an agent this dashboard is not tracking."))}`;
+  const o = s.orders.get(id);
+  if (!o) return `${head(`Order #${id}`, "Not loaded")}${card("", empty("Order not in view", "It may be older than the window this page loads."))}`;
   const loan = loanFor(s, o);
   const offers = offersFor(s, id);
-  const steps = stepsForOrder(id);
-  const stx = (prefix: string) => steps.find((x) => x.title.startsWith(prefix))?.tx;
   const sp = split(o, loan);
-  const report = reportForOrder(id);
 
   const tl = [
-    { t: "Escrow funded", d: `${label(o.customer_id)} deposited ${usd(o.amount)}`, at: o.created_at, tx: stx("Customer escrows"), done: true },
-    o.credit_request && { t: "Advance requested", d: `${usd(o.credit_request.amount)} for ${label(o.credit_request.vendor_id)}, max fee ${usd(o.credit_request.max_fee)}`, tx: stx("Agent requests"), done: true },
-    offers.length && { t: `${offers.length} bids received`, d: `${usd(offers[0].fee)} to ${usd(offers[offers.length - 1].fee)}`, at: offers[0].created_at, done: true },
-    loan && { t: "Loan funded", d: `${usd(loan.principal)} paid to ${label(loan.vendor_id)}, fee ${usd(loan.fee)}`, at: loan.created_at, tx: stx("Agent accepts"), done: true },
-    { t: "Delivered", d: o.deliverable_hash ? `hash ${o.deliverable_hash.slice(0, 16)}…` : "waiting for the agent", at: o.delivered_at, tx: stx("Agent delivers"), done: !!o.delivered_at },
-    { t: o.status === "Refunded" ? "Refunded" : "Settled", d: sp.settled ? `${usd(sp.lender)} to lender · ${usd(sp.agent)} to agent` : `auto-release after the ${Number(s.config.dispute_window_ns) / 1e9}s dispute window`, at: loan?.closed_at, tx: stx("Customer approves"), done: sp.settled },
-  ].filter(Boolean) as { t: string; d: string; at?: string | null; tx?: string; done: boolean }[];
+    { t: "Escrow funded", d: `${label(o.customer_id)} deposited ${usd(o.amount)}`, at: o.created_at, done: true },
+    o.credit_request && { t: "Advance requested", d: `${usd(o.credit_request.amount)} for ${label(o.credit_request.vendor_id)}, max fee ${usd(o.credit_request.max_fee)}`, done: true },
+    o.credit_request && { t: offers.length ? `${offers.length} bid${offers.length > 1 ? "s" : ""} received` : "No bids", d: offers.length ? `${usd(offers[0].fee)} to ${usd(offers[offers.length - 1].fee)}` : "No lender's policy would fund this request", at: offers[0]?.created_at, done: !!offers.length },
+    loan && { t: "Loan funded", d: `${usd(loan.principal)} paid to ${label(loan.vendor_id)}, fee ${usd(loan.fee)}`, at: loan.created_at, done: true },
+    { t: "Delivered", d: o.deliverable_hash ? `hash ${o.deliverable_hash.slice(0, 16)}…` : pastDeadline(o) || o.status === "Refunded" ? "missed the deadline" : "waiting for the agent", at: o.delivered_at, done: !!o.delivered_at },
+    { t: o.status === "Refunded" ? "Refunded" : o.status === "Disputed" ? "In dispute" : "Settled", d: sp.settled ? (loan ? `${usd(sp.lender)} to lender · ${usd(sp.agent)} to agent` : `${usd(sp.agent)} to agent`) : `auto-release ${Number(s.config.dispute_window_ns) / 1e9}s after delivery`, at: loan?.closed_at, done: sp.settled },
+  ].filter(Boolean) as { t: string; d: string; at?: string | null; done: boolean }[];
 
-  return `<div class="crumbs"><a href="#/orders">Orders</a> / #${id}</div>
-  ${head(`Order #${id} ${pill(o.status)}`, `${esc(label(o.agent_id))} for ${esc(label(o.customer_id))} · created ${fmtDate(o.created_at)}`)}
+  return `<div class="crumbs"><a href="#/app/orders">Orders</a> / #${id}</div>
+  ${head(`Order #${id} ${pill(o.status)}`, `<a href="${agentHref(o.agent_id)}">${esc(label(o.agent_id))}</a> for ${esc(label(o.customer_id))} · created ${fmtDate(o.created_at)}`)}
   <div class="kpis">
     ${kpi("Escrow", usd(o.amount))}
     ${kpi("Advance", loan ? usd(loan.principal) : "–", loan ? `${pct((Number(loan.principal) / Number(o.amount)) * 100, 0)} of escrow · cap ${s.config.max_advance_bps / 100}%` : "no loan")}
     ${kpi("Fee", loan ? usd(loan.fee) : "–", loan ? `${(bps(loan.fee, loan.principal) / 100).toFixed(2)}% of principal` : "")}
-    ${kpi("To lender", sp.settled ? usd(sp.lender) : "–", "paid first")}
+    ${kpi("To lender", sp.settled && loan ? usd(sp.lender) : "–", "paid first")}
     ${kpi("To agent", sp.settled ? usd(sp.agent) : "–", "the remainder")}
   </div>
   <div class="grid g-12">
     ${card("Lifecycle", `<ol class="timeline">${tl
-      .map((e) => `<li class="${e.done ? "done" : ""}"><span class="mk"></span><div><div class="tt">${esc(e.t)}</div><div class="muted">${esc(e.d)}</div></div><div class="when">${e.at ? `<span class="muted small">${fmtDate(e.at)}</span>` : ""}${e.tx ? txLink(e.tx) : ""}</div></li>`)
-      .join("")}</ol>`, { cls: "span-5" })}
+      .map((e) => `<li class="${e.done ? "done" : ""}"><span class="mk"></span><div><div class="tt">${esc(e.t)}</div><div class="muted">${esc(e.d)}</div></div><div class="when">${e.at ? `<span class="muted small">${fmtDate(e.at)}</span>` : ""}</div></li>`)
+      .join("")}</ol>`, { cls: "span-5", foot: `State from ${accountLink(CONTRACT, "the market contract")}` })}
     <div class="span-7 col">
-      ${card("Settlement", waterfall(o, loan), { foot: "Waterfall order: customer refund, then lender principal + fee, then the bond covers any shortfall, then the agent keeps the rest." })}
-      ${card("Bids", offers.length ? bidBars(offers, loan?.offer_id, id) : empty("No bids", "This order did not request an advance."), { foot: offers.length ? "Bids are fully funded when placed. Losing bids return to the lender when one is accepted." : "" })}
+      ${card("Settlement", waterfall(o, loan), { foot: "Waterfall: customer refund, then lender principal + fee, then the bond covers any shortfall, then the agent keeps the rest." })}
+      ${card("Bids", offers.length ? bidBars(offers, loan?.offer_id) : empty("No bids", o.credit_request ? "No lender's policy would fund this request." : "This order did not request an advance."))}
     </div>
   </div>
-  ${offers.length ? card("Offers", `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Offer</th><th>Lender</th><th>Strategy</th><th class="num">Fee</th><th class="num">Rate</th><th>Status</th><th>Rationale</th></tr></thead><tbody>${offers
-    .map((f) => `<tr><td class="mono">#${f.id}</td><td>${esc(label(f.lender_id))}</td><td>${strategyName(f.strategy)}</td><td class="num mono">${usd(f.fee)}</td><td class="num mono">${(bps(f.fee, f.principal) / 100).toFixed(2)}%</td><td>${pill(f.status)}</td><td class="muted small">${esc(rationaleFor(id, f.strategy).join(" · ") || "–")}</td></tr>`)
+  ${offers.length ? card("Offers", `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Offer</th><th>Lender</th><th>Strategy</th><th class="num">Fee</th><th class="num">Rate</th><th>Status</th></tr></thead><tbody>${offers
+    .map((f) => `<tr><td class="mono">#${f.id}</td><td>${esc(label(f.lender_id))}</td><td>${strategyName(f.strategy)}</td><td class="num mono">${usd(f.fee)}</td><td class="num mono">${(bps(f.fee, f.principal) / 100).toFixed(2)}%</td><td>${pill(f.status)}</td></tr>`)
     .join("")}</tbody></table></div>`) : ""}
-  <div class="grid g-12">
-    ${card("Terms", `<dl class="kv">
+  ${card("Terms", `<dl class="kv">
       <dt>Terms hash</dt><dd class="mono hash">${esc(o.terms_hash)}</dd>
       <dt>Deadline</dt><dd>${fmtDate(o.deadline)}</dd>
       <dt>Deliverable hash</dt><dd class="mono hash">${esc(o.deliverable_hash ?? "–")}</dd>
       <dt>Customer refund</dt><dd class="mono">${usd(o.customer_refund)}</dd>
-    </dl>`, { cls: report ? "span-5" : "span-12" })}
-    ${report ? card("Delivered artifact", `<pre class="doc">${esc(report)}</pre>`, { cls: "span-7", foot: "Its sha256 is the deliverable hash committed onchain." }) : ""}
-  </div>`;
+    </dl>`)}`;
 }
 
 export function market(s: Store) {
-  const open = s.orders.filter((o) => o.credit_request && o.loan_id === null && o.status === "Funded");
-  const auctions = s.orders.filter((o) => o.offer_ids.length).sort((a, b) => a.id - b.id);
-  const blocked = RUN.steps.filter((x) => x.act === "05");
+  const open = sorted(s.orders).filter((o) => o.credit_request && o.loan_id === null && o.status === "Funded" && !pastDeadline(o));
+  const auctions = sorted(s.orders).filter((o) => o.offer_ids.length).slice(0, 6);
+  const blocked = DEMO_RUN.steps.filter((x) => x.act === "05");
   const c = s.config;
   return `${head("Credit market", "Agents request advances against escrowed orders. Lender agents compete with fully funded bids, and the agent takes the cheapest valid one.")}
   <div class="kpis">
     ${kpi("Market status", c.paused ? "Paused" : "Open", c.paused ? "new draws blocked" : "accepting requests")}
     ${kpi("Max advance", `${c.max_advance_bps / 100}%`, "of the escrowed order")}
-    ${kpi("Dispute window", `${Number(c.dispute_window_ns) / 1e9}s`, "then anyone can finalize", "Short on testnet so the demo completes. A production window would be days.")}
-    ${kpi("Approved vendors", String(c.approved_vendors.length), "loan proceeds can only go here")}
-    ${kpi("Settlement token", "USDC", `<span title="${esc(c.token_id)}">test token on testnet</span>`)}
+    ${kpi("Dispute window", `${Number(c.dispute_window_ns) / 1e9}s`, "then anyone can finalize", "Short on testnet so the swarm settles quickly. A production window would be days.")}
+    ${kpi("Approved vendors", String(c.approved_vendors.length), c.approved_vendors.map(label).join(", "))}
+    ${kpi("Bids placed", String(s.market.totals.offers_made), `$${n(s.market.totals.offers_open).toFixed(0)} waiting now`)}
   </div>
   ${card(`Open requests <span class="count">${open.length}</span>`, open.length
     ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Order</th><th>Agent</th><th class="num">Escrow</th><th class="num">Requested</th><th class="num">Max fee</th><th>Vendor</th><th class="num">Bids</th></tr></thead><tbody>${open
       .map((o) => `<tr data-href="${orderHref(o.id)}"><td><a class="mono" href="${orderHref(o.id)}">#${o.id}</a></td><td>${esc(label(o.agent_id))}</td><td class="num mono">${usd(o.amount)}</td><td class="num mono">${usd(o.credit_request!.amount)}</td><td class="num mono">${usd(o.credit_request!.max_fee)}</td><td>${esc(label(o.credit_request!.vendor_id))}</td><td class="num mono">${o.offer_ids.length}</td></tr>`)
       .join("")}</tbody></table></div>`
-    : empty("No open requests", "Every advance requested so far has been funded. Run <code>pnpm demo:testnet</code> to create new orders."))}
-  <h3 class="sec">Cleared auctions</h3>
+    : empty("No open requests right now", "Requests clear within seconds while the swarm is running."))}
+  <h3 class="sec">Recent auctions</h3>
   <div class="grid g-12">${auctions
     .map((o) => {
       const offers = offersFor(s, o.id), loan = loanFor(s, o);
+      if (!offers.length) return "";
       const spread = Number(offers[offers.length - 1].fee) - Number(offers[0].fee);
-      return card(`<a href="${orderHref(o.id)}">Order #${o.id}</a>`, `<div class="auction-top"><div><div class="k">Winning fee</div><div class="v mono">${loan ? usd(loan.fee) : "–"}</div></div><div><div class="k">Advance</div><div class="v mono">${loan ? usd(loan.principal) : "–"}</div></div><div><div class="k">Spread</div><div class="v mono">${usd(spread)}</div></div></div>${bidBars(offers, loan?.offer_id, o.id)}`, {
-        cls: "span-6", right: loan ? txLink(stepsForOrder(o.id).find((x) => x.title.startsWith("Agent accepts"))?.tx) : "",
+      return card(`<a href="${orderHref(o.id)}">Order #${o.id}</a> <span class="muted small">${esc(label(o.agent_id))}</span>`, `<div class="auction-top"><div><div class="k">Winning fee</div><div class="v mono">${loan ? usd(loan.fee) : "–"}</div></div><div><div class="k">Advance</div><div class="v mono">${usd(offers[0].principal)}</div></div><div><div class="k">Spread</div><div class="v mono">${usd(spread)}</div></div></div>${bidBars(offers, loan?.offer_id)}`, {
+        cls: "span-6", right: `<span class="muted small">${ago(o.created_at)}</span>`,
       });
     })
     .join("")}</div>
   <h3 class="sec">Guardrails</h3>
   <div class="grid g-12">${blocked
     .map((b) => `<section class="card span-4 guard"><div class="card-b"><div class="g-ico">${ICON.shield}</div><div class="g-t">${esc(b.title.replace(/^Blocked: /, "").replace(/ \(.*\)$/, "").replace(/^./, (m) => m.toUpperCase()))}</div><div class="code bad">${esc(b.error)}</div></div><div class="card-f">Refused on testnet ${txLink(b.tx)}</div></section>`)
-    .join("")}</div>`;
+    .join("")}</div>
+  <p class="muted small">Guardrail transactions are from the first demo deployment (${esc(DEMO_RUN.contracts.loca)}). The same checks run in this contract and in its unit tests.</p>`;
 }
 
 export function lenders(s: Store) {
-  const by = new Map<string, Offer[]>();
-  for (const o of s.offers) by.set(o.lender_id, [...(by.get(o.lender_id) ?? []), o]);
-  const loans = [...s.loans.values()];
-  const rows = [...by.entries()].map(([id, offers]) => {
-    const won = loans.filter((l) => l.lender_id === id);
-    const earned = won.filter((l) => l.status === "Repaid").reduce((a, l) => a + Number(l.fee), 0);
-    const deployed = won.reduce((a, l) => a + Number(l.principal), 0);
-    const avg = offers.reduce((a, o) => a + bps(o.fee, o.principal), 0) / offers.length;
-    return { id, strategy: offers[0].strategy, bids: offers.length, won: won.length, earned, deployed, avg };
-  }).sort((a, b) => b.won - a.won || a.avg - b.avg);
-
   return `${head("Lenders", "Autonomous lender agents. Each prices risk from the contract's public record with its own policy, and bids with funds locked in the contract.")}
-  ${card("Lender performance", `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Lender</th><th>Strategy</th><th class="num">Bids</th><th class="num">Won</th><th class="num">Win rate</th><th class="num">Avg bid rate</th><th class="num">Deployed</th><th class="num">Fees earned</th></tr></thead><tbody>${rows
-    .map((r) => `<tr><td>${acct(r.id)}</td><td>${strategyName(r.strategy)}</td><td class="num mono">${r.bids}</td><td class="num mono">${r.won}</td><td class="num mono">${pct((r.won / r.bids) * 100, 0)}</td><td class="num mono">${(r.avg / 100).toFixed(2)}%</td><td class="num mono">${usd(r.deployed)}</td><td class="num mono">${usd(r.earned)}</td></tr>`)
-    .join("")}</tbody></table></div>`)}
+  ${lenderTable(s)}
   <h3 class="sec">Strategies</h3>
-  <div class="grid g-12">${Object.entries(STRATEGY)
-    .map(([k, v]) => {
-      const mine = s.offers.filter((o) => o.strategy === k).sort((a, b) => a.order_id - b.order_id);
-      return `<section class="card span-4"><div class="card-h"><h2>${v.name}</h2></div><div class="card-b"><p class="policy">${esc(v.policy)}</p>
-        <div class="mini">${mine.map((o) => `<div><span class="muted">Order #${o.order_id}</span><span class="mono">${usd(o.fee)}</span>${pill(o.status)}</div>`).join("")}</div></div>
+  <div class="grid g-12">${CAST.lenders
+    .map((l) => {
+      const v = STRATEGY[l.strategy];
+      const mine = [...s.offers.values()].filter((o) => o.lender_id === l.id).sort((a, b) => b.id - a.id).slice(0, 5);
+      return `<section class="card span-4"><div class="card-h"><h2>${esc(l.name)}</h2><span class="muted small">${esc(v?.name ?? l.strategy)}</span></div><div class="card-b"><p class="policy">${esc(v?.policy ?? "")}</p>
+        <div class="k" style="margin-bottom:6px">Latest bids</div>
+        <div class="mini">${mine.map((o) => `<div><a href="${orderHref(o.order_id)}">#${o.order_id}</a><span class="mono">${usd(o.fee)}</span>${pill(o.status)}</div>`).join("") || '<div class="muted small">No bids yet</div>'}</div></div>
         <div class="card-f"><code>src/agents/lenders.ts</code></div></section>`;
     })
     .join("")}</div>`;
 }
 
-export function activity(filter = "all") {
-  const rows = activityRows();
-  const types = ["all", ...new Set(rows.map((r) => r.event))];
-  return `${head("Activity", `Contract events (NEP-297) from the testnet demo run, ${new Date(RUN.generatedAt).toUTCString()}.`)}
-  <div class="tabs scroll">${types.map((t) => `<a class="tab ${t === filter ? "on" : ""}" href="#/activity${t === "all" ? "" : `?event=${t}`}">${t === "all" ? "All" : t}<span>${t === "all" ? rows.length : rows.filter((r) => r.event === t).length}</span></a>`).join("")}</div>
-  ${card("", activityList(filter === "all" ? rows : rows.filter((r) => r.event === filter)), { cls: "flush", foot: `Every row links to its transaction on NearBlocks. Contract ${accountLink(CONTRACT)}` })}`;
+export function activity(feed: FeedItem[], filter = "all") {
+  const kinds = ["all", "order", "request", "bid", "loan", "delivered", "settled", "refunded", "disputed", "default"];
+  const names: Record<string, string> = { all: "All", order: "Escrow", request: "Requests", bid: "Bids", loan: "Loans", delivered: "Delivered", settled: "Settled", refunded: "Refunded", disputed: "Disputes", default: "Defaults" };
+  const list = (filter === "all" ? feed : feed.filter((f) => f.kind === filter)).slice(0, 200);
+  return `${head("Activity", "Every state change in the market, reconstructed live from contract views.", `<span class="live-tag"><i></i>Live</span>`)}
+  <div class="tabs scroll">${kinds.map((k) => `<a class="tab ${k === filter ? "on" : ""}" href="#/app/activity${k === "all" ? "" : `?kind=${k}`}">${names[k]}<span>${k === "all" ? feed.length : feed.filter((f) => f.kind === k).length}</span></a>`).join("")}</div>
+  ${card("", feedList(list), { cls: "flush", foot: `Times are block timestamps where the contract stores them. Contract ${accountLink(CONTRACT)}` })}`;
 }
-
-

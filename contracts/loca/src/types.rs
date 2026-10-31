@@ -170,3 +170,57 @@ pub enum TransferMsg {
         agent_id: AccountId,
     },
 }
+
+/// Market-wide running totals, updated wherever funds move, so dashboards can read the whole
+/// market in one view call. All amounts are in the settlement token's base units.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MarketTotals {
+    pub orders: u64,
+    pub orders_settled: u64,
+    pub orders_refunded: u64,
+    pub orders_disputed: u64,
+    /// Everything customers ever escrowed.
+    pub escrow_volume: U128,
+    /// Escrow currently held for open orders.
+    pub escrow_held: U128,
+    pub offers_made: u64,
+    /// Lender funds locked in open offers.
+    pub offers_open: U128,
+    pub loans: u64,
+    pub loans_repaid: u64,
+    pub loans_defaulted: u64,
+    /// Principal ever advanced to vendors.
+    pub originated: U128,
+    /// Principal of loans not yet settled.
+    pub outstanding: U128,
+    /// Paid to lenders at settlement, principal plus fee, including bond recoveries.
+    pub repaid_to_lenders: U128,
+    pub fees_paid: U128,
+    pub default_loss: U128,
+    pub bonds_held: U128,
+    pub bond_drawn: U128,
+    pub agent_revenue: U128,
+    pub customer_refunds: U128,
+    /// Credited balances not yet withdrawn.
+    pub claimable: U128,
+    pub deposits_rejected: u64,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct MarketView {
+    pub totals: MarketTotals,
+    pub agents: u32,
+    pub next_order_id: u64,
+    pub next_offer_id: u64,
+    pub next_loan_id: u64,
+    pub block_timestamp: U64,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct AgentWithScore {
+    pub agent: Agent,
+    pub score: crate::score::ScoreReport,
+}
