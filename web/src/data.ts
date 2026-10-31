@@ -60,7 +60,7 @@ export const DEMO_RUN = demoRun as unknown as { steps: { act: string; title: str
 // ---------------------------------------------------------------- RPC
 
 // Free public endpoints rate-limit, so reads rotate across several.
-const RPCS = ["https://rpc.testnet.fastnear.com", "https://near-testnet.drpc.org", "https://test.rpc.fastnear.com", "https://archival-rpc.testnet.fastnear.com", "https://rpc.testnet.near.org"];
+const RPCS = ["https://rpc.testnet.fastnear.com", "https://near-testnet.drpc.org", "https://test.rpc.fastnear.com", "https://archival-rpc.testnet.fastnear.com"];
 let rr = 0;
 
 // Free endpoints throttle bursts, so at most three requests are in flight at once.

@@ -58,7 +58,7 @@ const VENDORS: Record<VendorKind, string> = { data: "datahub", compute: "gpu-poo
 // ---------------------------------------------------------------- plumbing
 
 // Free public RPCs rate-limit a busy swarm, so reads rotate across several and sends fail over.
-const RPCS = (process.env.SWARM_RPCS ?? "https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://rpc.testnet.fastnear.com,https://rpc.testnet.near.org").split(",");
+const RPCS = (process.env.SWARM_RPCS ?? "https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://rpc.testnet.fastnear.com").split(",");
 const providers = RPCS.map((url) => new JsonRpcProvider({ url }, { retries: 3, wait: 700, backoff: 1.6 }));
 const provider = new FailoverRpcProvider(providers);
 let rr = 0;
@@ -91,6 +91,20 @@ const acct = (slug: string) => {
   return a;
 };
 
+// Free RPCs rate-limit bursts, so the whole swarm keeps at most four requests in flight.
+let inflight = 0;
+const waiters: (() => void)[] = [];
+async function limited<T>(fn: () => Promise<T>): Promise<T> {
+  if (inflight >= 4) await new Promise<void>((r) => waiters.push(r));
+  inflight++;
+  try {
+    return await fn();
+  } finally {
+    inflight--;
+    waiters.shift()?.();
+  }
+}
+
 // One transaction at a time per account, so nonces never collide.
 const queues = new Map<string, Promise<unknown>>();
 function serial<T>(who: string, fn: () => Promise<T>): Promise<T> {
@@ -100,7 +114,7 @@ function serial<T>(who: string, fn: () => Promise<T>): Promise<T> {
   return next;
 }
 const tx = <T>(who: Account, method: string, args: Record<string, unknown>, contract = LOCA, deposit: bigint = 0n, gas?: bigint): Promise<TxResult<T>> =>
-  serial(who.accountId, () => call<T>(who, contract, method, args, deposit, gas));
+  serial(who.accountId, () => limited(() => call<T>(who, contract, method, args, deposit, gas)));
 
 // ---------------------------------------------------------------- agent keys
 // Each agent process signs with a function-call access key: it can call only these market methods,
@@ -160,7 +174,7 @@ async function ensureStorage(slug: string) {
 const ftCall = (who: Account, amount: bigint, msg: unknown) =>
   tx(who, "ft_transfer_call", { receiver_id: LOCA, amount: amount.toString(), msg: JSON.stringify(msg) }, USDC, 1n);
 const view = <T>(method: string, args: Record<string, unknown> = {}, contract = LOCA) =>
-  rotate((p) => p.callFunction({ contractId: contract, method, args }) as Promise<T>);
+  limited(() => rotate((p) => p.callFunction({ contractId: contract, method, args }) as Promise<T>));
 // Wall clock is within seconds of block time; deadlines here are minutes long.
 const nowNs = async () => BigInt(Date.now()) * 1_000_000n;
 
@@ -446,6 +460,7 @@ async function housekeeping() {
       log("bond_posted", `${a.operator} tops up ${a.name}'s bond by ${fmtUsd(usd(a.bond))}`, { tx: r.hash });
     }
   }
+  for (const l of LENDERS) if ((await balanceOf(id(l.slug))) < usd(400)) await tx(root, "mint", { account_id: id(l.slug), amount: usd(1500).toString() }, USDC);
   for (const o of OPERATORS) if ((await balanceOf(id(o))) < usd(60)) await tx(root, "mint", { account_id: id(o), amount: usd(300).toString() }, USDC);
   // NEAR for gas and storage.
   for (const slug of ["market", ...ACTORS]) await ensureNear(slug);

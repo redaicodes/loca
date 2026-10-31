@@ -14,7 +14,7 @@ import { fmtUsd, usd, type Agent, type Config, type Loan, type Offer, type Order
 
 const CONTRACT = process.env.LOCA_CONTRACT ?? "market.loca-swarm-mvwu8dfo.testnet";
 // Free public RPCs rate-limit; fail over across several, with backoff.
-const RPCS = (process.env.NEAR_RPC_URL ?? "https://rpc.testnet.fastnear.com,https://near-testnet.drpc.org,https://test.rpc.fastnear.com,https://rpc.testnet.near.org").split(",");
+const RPCS = (process.env.NEAR_RPC_URL ?? "https://rpc.testnet.fastnear.com,https://near-testnet.drpc.org,https://test.rpc.fastnear.com").split(",");
 const provider = new FailoverRpcProvider(RPCS.map((url) => new JsonRpcProvider({ url }, { retries: 4, wait: 800, backoff: 1.7 })));
 const SEC = 1_000_000_000n;
 

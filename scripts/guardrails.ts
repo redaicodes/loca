@@ -25,7 +25,7 @@ const AGENT_METHODS = ["request_credit", "accept_offer", "mark_delivered", "with
 const SEC = 1_000_000_000n;
 
 const provider = new FailoverRpcProvider(
-  ["https://rpc.testnet.fastnear.com", "https://near-testnet.drpc.org", "https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"]
+  ["https://rpc.testnet.fastnear.com", "https://near-testnet.drpc.org", "https://test.rpc.fastnear.com"]
     .map((url) => new JsonRpcProvider({ url }, { retries: 4, wait: 800, backoff: 1.7 })),
 );
 const acct = (slug: string, key: string = SUB) => new Account(`${slug}.${ROOT}`, provider, key as KeyPairString);
