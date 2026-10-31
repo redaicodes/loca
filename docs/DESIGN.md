@@ -61,7 +61,12 @@ Intents has no testnet (HACKATHON.md Q-007). The core loop runs on testnet with 
 
 Intents fits best on the **customer and lender funding** edges: pay or fund from any routable token. Repayment comes out of escrow automatically, so "repay in another token" is secondary.
 
-To verify: whether 1Click can deliver via `ft_transfer_call` with a `msg`. If it can't, funds land in the user's NEAR account first and are then moved into LOCA with `ft_transfer_call`.
+Verified: 1Click's `customRecipientMsg` makes it withdraw with `ft_transfer_call`, so a cross-chain payment can open an order directly. Two consequences, both implemented:
+
+- `sender_id` is the Intents contract, so `FundOrder` and `MakeOffer` carry an explicit `customer_id` or `lender_id`.
+- 1Click warns that funds are lost if the receiver's `ft_on_transfer` fails. LOCA therefore never panics on a business-rule failure in `ft_on_transfer`. It credits the beneficiary's withdrawable balance and emits `deposit_rejected`.
+
+1Click only quotes to recipients that exist on mainnet.
 
 ## 7. Scope cuts
 
@@ -71,14 +76,14 @@ The registry, escrow and credit market are one contract. Out of scope: Chain Sig
 
 | Step | Status |
 |---|---|
-| Contract: identity, policy, escrow, offers, loans, waterfall, disputes, score | done (20 unit tests) |
+| Contract: identity, policy, escrow, offers, loans, waterfall, disputes, score | done (22 unit tests) |
 | Test token (faucet NEP-141) + `cargo near` build script | done |
 | TS client + sandbox simulation (`pnpm demo:sim`) | done, full loop verified on local nearcore 2.14 |
 | Lender agents ×3 | done (6 TS tests) |
 | Research agent (NEAR AI Cloud or offline) | done; NEAR AI endpoint/model not yet verified with a real key |
-| Testnet run (`pnpm demo:testnet`) | script ready, needs a funded testnet account |
-| Intents adapter: asset list, dry quote, status polling, failure paths | next |
-| Dashboard (style below), reads `runs/*.json` and contract views | next |
+| Testnet run (`pnpm demo:testnet`) | done: `lmvwp2jlc-loca.loca-mvwp1z4g.testnet`, log in docs/testnet-run.json |
+| Intents adapter: asset list, dry quote, status polling, failure paths | done; live dry quotes in docs/intents-quotes.json |
+| Dashboard (style below), reads run log + live contract views | done |
 | Demo video, X post, submission | Nov 12–14 |
 
 Mainnet note: near-sdk 5.30 wasm imports nearcore 2.14 host functions. Testnet is on protocol 88, mainnet was on protocol 86 on 2026-10-31. A mainnet deploy would need an older near-sdk or a wait for mainnet to upgrade.

@@ -13,9 +13,11 @@ Requires Rust (the toolchain is pinned by `rust-toolchain.toml`), [`cargo-near`]
 ```sh
 pnpm install
 pnpm build:contracts        # builds contracts/target/near/{loca,test_token}/*.wasm
-pnpm test:contracts         # 20 Rust unit tests
-pnpm test                   # TypeScript tests (lender strategies, event parsing)
+pnpm test:contracts         # 22 Rust unit tests
+pnpm test                   # 10 TypeScript tests (lender strategies, Intents adapter, events)
 pnpm demo:sim               # starts a local NEAR node and runs the full loop
+pnpm intents:quote          # live NEAR Intents dry quotes (no funds, no keys)
+pnpm web:dev                # dashboard at http://localhost:5173
 ```
 
 | Do | See |
@@ -26,10 +28,17 @@ pnpm demo:sim               # starts a local NEAR node and runs the full loop
 | (same run) | `Score 620 → 747`; on the second loan the cheapest bid is `$0.60` |
 | (same run) | `[ 05 ] Blocked:` operator posing as customer (`ERR_CUSTOMER_RELATED_PARTY`), loan routed to operator (`ERR_VENDOR_NOT_IN_POLICY`), advance above 50% (`ERR_EXCEEDS_ADVANCE_RATE`) |
 | open `runs/sandbox-latest.json` | Every step with its tx hash and the LOCA events it emitted |
+| `pnpm intents:quote` | `[ OK ] ETH on Arbitrum: pay 0.0449… (~$101.26) → 100.0 USDC delivered`, plus SOL, BTC and Base USDC; an unlisted token shows `ROUTE_UNAVAILABLE`; a bad refund address shows `QUOTE_REJECTED` |
+| `pnpm web:dev` | The dashboard: agent profile, live score from the testnet contract, both auctions, settlement waterfalls, Intents routes, guardrails and the full ledger with NearBlocks links |
 
 ## Testnet
 
+A completed run is already live. Contract: [`lmvwp2jlc-loca.loca-mvwp1z4g.testnet`](https://testnet.nearblocks.io/address/lmvwp2jlc-loca.loca-mvwp1z4g.testnet). Every transaction is listed in [docs/testnet-run.json](docs/testnet-run.json) and on the dashboard's ledger. Examples: [vendor paid by the loan](https://testnet.nearblocks.io/txns/HmTL4J53cKdnyN1M6cfQpg5hPMDnniDH1fcAntc1uEHt), [repayment waterfall](https://testnet.nearblocks.io/txns/GwXt5PZnTyhjzX7Bz61DZkWsGCjRfAEah3ZeDcT1rXeJ).
+
+To reproduce it:
+
 ```sh
+npx tsx scripts/testnet-account.mts   # optional: creates a faucet-funded testnet account into .env
 cp .env.example .env        # set NEAR_ACCOUNT_ID / NEAR_PRIVATE_KEY for a funded testnet account (~8 NEAR)
 pnpm demo:testnet           # same loop; tx links on testnet.nearblocks.io
 ```
@@ -51,6 +60,8 @@ escrow   ──waterfall──▶ lender principal + fee │ bond covers shortfa
 - **Contract** ([contracts/loca](contracts/loca/src/lib.rs)): agent identity and operator spend policy, order escrow, lender offers, loans, repayment waterfall, disputes (arbiter), kill switch, LOCA Score view.
 - **Score** ([score.rs](contracts/loca/src/score.rs)): `get_score(agent_id)` returns a 0–1000 score, components, weights and reason codes, computed only from onchain history.
 - **Lender agents** ([lenders.ts](src/agents/lenders.ts)): escrow-coverage, repayment-history and concentration-aware strategies. Deterministic, with the rationale logged.
+- **Intents adapter** ([oneclick.ts](src/intents/oneclick.ts)): asks 1Click for `EXACT_OUTPUT` USDC on NEAR, delivered to the LOCA contract with `customRecipientMsg`. 1Click then calls `ft_transfer_call` and the payment opens the order for the named `customer_id`. The adapter checks minimum received, slippage, deadline and that the message is untouched. Only status `SUCCESS` counts as funded; `REFUNDED` and `FAILED` are handled explicitly. The contract never panics on a deposit that breaks a business rule. It credits the beneficiary instead, so Intents deliveries cannot be stranded.
+- **Dashboard** ([web/](web/src/main.ts)): reads the run log and refreshes the agent and score from the live testnet contract.
 - **Research agent** ([research.ts](src/agents/research.ts)): buys data from the vendor and writes the report, using NEAR AI Cloud when `NEAR_AI_API_KEY` is set and an offline writer otherwise.
 
 ## Threat model (summary)
@@ -72,7 +83,12 @@ Full design notes and the reasoning behind each choice: [docs/DESIGN.md](docs/DE
 
 - Built with near-sdk 5.30, which needs nearcore 2.14 host functions. Testnet (protocol 88) supports them; mainnet was at protocol 86 on 2026-10-31.
 - The vendor list is curated by the contract owner in the MVP.
-- NEAR Intents funding (mainnet only, as there is no Intents testnet) is in progress.
+- NEAR Intents has no testnet. The quotes are live mainnet dry runs (`dry: true`, no funds) with a stand-in recipient, because 1Click only quotes to existing mainnet accounts and LOCA is not deployed on mainnet. A live swap needs a mainnet deployment.
+- The research agent's NEAR AI Cloud path is untested without an API key; the demo runs use the offline writer.
+
+## Built with
+
+near-sdk 5.30 and near-contract-standards (Rust), near-api-js 7, near-sandbox, the NEAR Intents 1Click API, Vite. Code was written with AI assistance (Claude Code). No pre-hackathon code. Work started on 2026-10-31, inside the window that opened on 2026-10-19 (Q-001).
 
 ## License
 
