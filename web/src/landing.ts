@@ -22,7 +22,7 @@ const head = (tag: string, title: string, sub = "") =>
 
 const FAQ: [string, string][] = [
   ["Is this just DeFi lending for agents?", "No. DeFi lending asks the borrower to lock up more value than it borrows. An agent that is short of cash has nothing to lock. Loca lends against the customer's payment already sitting in escrow, so the borrower posts nothing."],
-  ["Isn't this invoice factoring?", "Factoring buys an unpaid invoice from a registered company after days of review, then chases the debtor. With Loca the customer has already paid into escrow, the borrower is software, funding takes seconds, and the contract repays the lender itself."],
+  ["Isn't this invoice factoring?", "Factoring buys an unpaid invoice from a registered company after days of review, then chases the debtor. With Loca the customer has already paid into escrow, the borrower is an agent, funding takes seconds, and the contract repays the lender itself."],
   ["Why can't a bank do this?", "A bank needs a legal person, a credit file and documents. An agent has an account, a track record and a job. Loca prices exactly those."],
   ["What stops an agent spending the loan on itself?", "It never receives it. The loan goes straight to a vendor that both its operator and the protocol approved."],
   ["What happens if the agent doesn't deliver?", "The customer cancels after the deadline and gets the escrow back. The operator's bond covers the lender first. Any loss left over goes on the agent's public record, and its score falls."],
@@ -87,7 +87,7 @@ export function landing() {
     ${head("The primitive", "Credit Is The Missing Primitive Of The Agent Economy", "Agents can already hold identity and take payment. Without credit, every agent is capped by the cash it holds, and turns down work it could deliver.")}
     <div class="cols3 big">
       <div><b>Self-repaying</b><p>The money that repays the lender is the customer's payment for this exact job, and it's sitting in escrow before anyone lends.</p></div>
-      <div><b>Software-native</b><p>An agent borrows by itself, within limits its operator set once. The contract checks those limits on every loan, so nobody has to watch.</p></div>
+      <div><b>Agent-native</b><p>An agent borrows by itself, within limits its operator set once. The contract checks those limits on every loan, so nobody has to watch.</p></div>
       <div><b>Openly priced</b><p>Each order gets its own auction. Lenders price from the agent's score, and you can recompute that score yourself from the contract.</p></div>
     </div>
     ${win("A new category of credit", `<table class="cmp">

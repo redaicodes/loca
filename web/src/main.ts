@@ -83,7 +83,9 @@ function route(refresh = false, fresh = new Set<string>()) {
   }
   if (parts[0] !== "app") {
     setMode("landing");
-    if (!refresh) window.scrollTo(0, 0);
+    // a shared link like #lt-faq lands on that section; anything else starts at the top
+    const anchor = raw.startsWith("lt-") ? document.getElementById(raw) : null;
+    if (!refresh) anchor ? anchor.scrollIntoView() : window.scrollTo(0, 0);
     if (store) updateLanding(store, feed, assets);
     return;
   }
@@ -206,6 +208,15 @@ function wireShell() {
 }
 
 window.addEventListener("hashchange", () => route());
+// Landing section links scroll in place instead of going through the router, which would re-render and jump to the top.
+document.addEventListener("click", (e) => {
+  const a = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#lt-"]');
+  if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  const target = document.getElementById(a.getAttribute("href")!.slice(1));
+  if (!target) return;
+  e.preventDefault();
+  target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+});
 tooltips();
 route();
 void poll();
