@@ -3,7 +3,7 @@ name = "test-token"
 version = "0.1.0"
 edition = "2021"
 description = "Faucet NEP-141 token standing in for USDC on testnet and sandbox. Not for mainnet."
-license = "MIT"
+license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

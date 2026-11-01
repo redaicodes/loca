@@ -3,7 +3,7 @@ name = "loca"
 version = "0.1.0"
 edition = "2021"
 description = "LOCA - Line of Credit for Agents: receivable-backed credit market for AI agents on NEAR"
-license = "MIT"
+license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

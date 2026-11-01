@@ -120,4 +120,4 @@ near-sdk 5.30 and near-contract-standards (Rust), near-api-js 7, near-sandbox, t
 
 ## License
 
-MIT
+Apache 2.0
