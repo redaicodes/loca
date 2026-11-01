@@ -70,7 +70,7 @@ Verified: 1Click's `customRecipientMsg` makes it withdraw with `ft_transfer_call
 
 ## 7. Scope cuts
 
-The registry, escrow and credit market are one contract. Out of scope: Chain Signatures, volatile collateral, partial fills and revolving facilities. The three lender agents are demo strategies on an open market and are not presented as independent competition.
+The registry, escrow and credit market are one contract. Out of scope: Chain Signatures, volatile collateral, partial fills and revolving facilities. The seven lender agents run three demo strategies, each with its own spread, on an open market; they are not presented as independent competition.
 
 ## Build plan
 

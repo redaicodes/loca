@@ -12,7 +12,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPair, type KeyPairString, nearToYocto } from "near-api-js";
-import { STRATEGIES, type LenderStrategy } from "../src/agents/lenders.js";
+import { ACTORS, AGENT_METHODS, AGENTS, CUSTOMERS, DISPUTE_WINDOW_SEC, LENDERS, OPERATORS, VENDORS, vendorsOf, lenderQuote, type AgentSpec } from "../src/swarm/cast.js";
 import { sha256 } from "../src/agents/research.js";
 import { call, ContractError, type TxResult } from "../src/lib/near.js";
 import { fmtUsd, usd, type Agent, type Loan, type Order, type ScoreReport } from "../src/lib/types.js";
@@ -25,35 +25,6 @@ const WASM = {
   token: join(ROOT_DIR, "contracts/target/near/test_token/test_token.wasm"),
 };
 const SEC = 1_000_000_000n;
-const DISPUTE_WINDOW_SEC = 30;
-
-// ---------------------------------------------------------------- cast
-
-type VendorKind = "data" | "compute" | "api";
-interface AgentSpec {
-  slug: string; name: string; service: string; operator: string;
-  price: [number, number]; reliability: number; borrowRate: number; vendors: VendorKind[];
-  /** Share of orders from the agent's main customer (customer-concentration signal). */
-  concentration?: number; bond: number;
-}
-const AGENTS: AgentSpec[] = [
-  { slug: "atlas", name: "Atlas Research", service: "research briefs", operator: "northwind", price: [60, 160], reliability: 0.97, borrowRate: 0.8, vendors: ["data"], bond: 15 },
-  { slug: "quill", name: "Quill Translate", service: "document translation", operator: "northwind", price: [25, 90], reliability: 0.99, borrowRate: 0.5, vendors: ["api"], bond: 10 },
-  { slug: "forge", name: "Forge Code Review", service: "code audits", operator: "helix", price: [80, 200], reliability: 0.95, borrowRate: 0.9, vendors: ["compute"], bond: 20 },
-  { slug: "echo", name: "Echo Transcribe", service: "audio transcription", operator: "helix", price: [20, 70], reliability: 0.98, borrowRate: 0.6, vendors: ["compute", "api"], bond: 10 },
-  { slug: "pixel", name: "Pixel Studio", service: "image generation", operator: "kite", price: [30, 120], reliability: 0.88, borrowRate: 0.85, vendors: ["compute"], bond: 10 },
-  { slug: "ledger", name: "Ledger Books", service: "bookkeeping", operator: "kite", price: [40, 140], reliability: 0.99, borrowRate: 0.6, vendors: ["api"], concentration: 0.8, bond: 15 },
-  { slug: "scout", name: "Scout Leads", service: "sales lead lists", operator: "orbit", price: [50, 150], reliability: 0.82, borrowRate: 0.9, vendors: ["data"], bond: 5 },
-  { slug: "nova", name: "Nova Support", service: "support triage", operator: "orbit", price: [20, 80], reliability: 0.93, borrowRate: 0.7, vendors: ["api"], bond: 10 },
-];
-const OPERATORS = ["northwind", "helix", "kite", "orbit"];
-const CUSTOMERS = ["acme", "bluefin", "corvid", "delta", "evergreen", "fjord"];
-const LENDERS: { slug: string; name: string; strategy: LenderStrategy }[] = [
-  { slug: "cover-capital", name: "Cover Capital", strategy: STRATEGIES[0] },
-  { slug: "track-fund", name: "Track Record Fund", strategy: STRATEGIES[1] },
-  { slug: "spread-credit", name: "Spread Credit", strategy: STRATEGIES[2] },
-];
-const VENDORS: Record<VendorKind, string> = { data: "datahub", compute: "gpu-pool", api: "api-mart" };
 
 // ---------------------------------------------------------------- plumbing
 
@@ -120,10 +91,9 @@ const tx = <T>(who: Account, method: string, args: Record<string, unknown>, cont
 // Each agent process signs with a function-call access key: it can call only these market methods,
 // cannot attach NEAR, and cannot touch tokens or any other contract. NEAR enforces this before the
 // transaction runs. The operator's full-access key (SWARM_SUBKEY) is used only for setup and upkeep.
-export const AGENT_METHODS = ["request_credit", "accept_offer", "mark_delivered", "withdraw", "update_profile"];
 const AGENT_GAS = 30_000_000_000_000n;
 const WITHDRAW_GAS = 60_000_000_000_000n;
-const KEY_ALLOWANCE = "1";
+const KEY_ALLOWANCE = "5"; // lasts the hosted swarm through judging
 const KEYS_FILE = join(ROOT_DIR, "runs/agent-keys.json");
 const agentKeys: Record<string, string> = existsSync(KEYS_FILE) ? JSON.parse(readFileSync(KEYS_FILE, "utf8")) : {};
 const agentSigners = new Map<string, Account>();
@@ -189,7 +159,6 @@ function log(kind: string, text: string, data: Record<string, unknown> = {}) {
   console.log(`${line.t.slice(11, 19)}  ${kind.padEnd(14)} ${text}`);
 }
 
-const ACTORS = ["arbiter", ...AGENTS.map((a) => a.slug), ...OPERATORS, ...CUSTOMERS, ...LENDERS.map((l) => l.slug), ...Object.values(VENDORS)];
 
 /** Keep an account's spendable NEAR above a floor (contract accounts: above their storage). */
 async function ensureNear(slug: string) {
@@ -205,10 +174,7 @@ async function ensureNear(slug: string) {
 // ---------------------------------------------------------------- setup
 
 async function setup() {
-  if (existsSync(STATE_FILE)) {
-    console.log(`Swarm already set up (${STATE_FILE}). Delete it to deploy a new market.`);
-    return;
-  }
+  // Re-runnable: each step checks chain state first, so running it again only adds new cast members.
   if (!SUB_KEY) {
     SUB_KEY = KeyPair.fromRandom("ed25519").toString();
     appendFileSync(join(ROOT_DIR, ".env"), `\nSWARM_SUBKEY=${SUB_KEY}\n`);
@@ -244,24 +210,27 @@ async function setup() {
   }
   console.log(`deployed ${LOCA} and ${USDC}`);
 
-  const everyone = [LOCA, ...AGENTS.map((a) => a.slug), ...OPERATORS, ...CUSTOMERS, ...LENDERS.map((l) => l.slug), ...Object.values(VENDORS), "arbiter"]
+  const everyone = [LOCA, ...AGENTS.map((a) => a.slug), ...OPERATORS, ...CUSTOMERS, ...LENDERS.map((l) => l.slug), ...VENDORS.map((v) => v.slug), "arbiter"]
     .map((s) => (s.includes(".") ? s : id(s)));
-  const funded = BigInt(await view<string>("ft_balance_of", { account_id: id(CUSTOMERS[0]) }, USDC).catch(() => "0")) > 0n;
-  if (!funded) {
-    await call(root, USDC, "register", { account_ids: everyone });
-    for (const c of CUSTOMERS) await call(root, USDC, "mint", { account_id: id(c), amount: usd(3000).toString() });
-    for (const l of LENDERS) await call(root, USDC, "mint", { account_id: id(l.slug), amount: usd(2500).toString() });
-    for (const o of OPERATORS) await call(root, USDC, "mint", { account_id: id(o), amount: usd(300).toString() });
-    for (const v of Object.values(VENDORS)) await call(root, LOCA, "add_vendor", { vendor_id: id(v) });
-  }
+  await call(root, USDC, "register", { account_ids: everyone });
+  const fund = async (slug: string, amount: number) => {
+    if (BigInt(await view<string>("ft_balance_of", { account_id: id(slug) }, USDC)) === 0n) await call(root, USDC, "mint", { account_id: id(slug), amount: usd(amount).toString() });
+  };
+  for (const c of CUSTOMERS) await fund(c, 3000);
+  for (const l of LENDERS) await fund(l.slug, 2500);
+  for (const o of OPERATORS) await fund(o, 300);
+  const approved = (await view<{ approved_vendors: string[] }>("get_config")).approved_vendors;
+  for (const v of VENDORS) if (!approved.includes(id(v.slug))) await call(root, LOCA, "add_vendor", { vendor_id: id(v.slug) });
 
   for (const a of AGENTS) {
     const profile = { name: a.name, service: a.service, operator: a.operator };
     let ag = await view<Agent | null>("get_agent", { agent_id: id(a.slug) });
     if (!ag) await call(acct(a.slug), LOCA, "register_agent", { operator_id: id(a.operator), profile_hash: sha256(JSON.stringify(profile)) }, nearToYocto("0.3"));
-    if (!ag?.policy_version) {
+    const wanted = a.vendors.flatMap(vendorsOf).map(id);
+    const have = (ag as unknown as { policy?: { allowed_vendors: string[] } } | null)?.policy?.allowed_vendors ?? [];
+    if (!ag?.policy_version || wanted.some((v) => !have.includes(v))) {
       await call(acct(a.operator), LOCA, "set_spend_policy", {
-        agent_id: id(a.slug), allowed_vendors: a.vendors.map((v) => id(VENDORS[v])), max_principal: usd(80).toString(),
+        agent_id: id(a.slug), allowed_vendors: wanted, max_principal: usd(80).toString(),
       });
     }
     ag = await view<Agent>("get_agent", { agent_id: id(a.slug) });
@@ -275,7 +244,7 @@ async function setup() {
     agents: AGENTS.map((a) => ({ id: id(a.slug), name: a.name, service: a.service, operator: id(a.operator) })),
     operators: OPERATORS.map(id), customers: CUSTOMERS.map(id),
     lenders: LENDERS.map((l) => ({ id: id(l.slug), name: l.name, strategy: l.strategy.id })),
-    vendors: Object.entries(VENDORS).map(([kind, v]) => ({ id: id(v), kind })),
+    vendors: VENDORS.map((v) => ({ id: id(v.slug), name: v.name, kind: v.kind })),
     arbiter: id("arbiter"),
   };
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
@@ -318,7 +287,7 @@ async function cycle(a: AgentSpec, mine: { order?: number }) {
   // Borrow against the order to buy inputs.
   if (Math.random() < a.borrowRate && amount >= 30) {
     const principal = usd(Math.min(80, Math.round(amount * rand(0.2, 0.45))));
-    const vendor = id(VENDORS[pick(a.vendors)]);
+    const vendor = id(pick(vendorsOf(pick(a.vendors))));
     const req = await tx(signer, "request_credit", {
       order_id: orderId, amount: principal.toString(), vendor_id: vendor,
       max_fee: ((principal * 8n) / 100n).toString(), expires_at: (t0 + 90n * SEC).toString(),
@@ -331,7 +300,7 @@ async function cycle(a: AgentSpec, mine: { order?: number }) {
     const live = await activeLoans();
     const bids = await Promise.all(
       LENDERS.map(async (l) => {
-        const d = l.strategy.decide({ order, request: order.credit_request!, agent, score, exposureToAgent: exposure(live, id(l.slug), agentAcc.accountId) });
+        const d = lenderQuote(l, { order, request: order.credit_request!, agent, score, exposureToAgent: exposure(live, id(l.slug), agentAcc.accountId) });
         if (!d.bid) return null;
         const r = await ftCall(acct(l.slug), principal, {
           MakeOffer: { order_id: orderId, fee: d.fee.toString(), expires_at: (t0 + 85n * SEC).toString(), strategy: l.strategy.id },
@@ -447,7 +416,7 @@ async function housekeeping() {
   }
   await sweepStale();
   const balanceOf = async (acc: string) => BigInt(await view<string>("ft_balance_of", { account_id: acc }, USDC));
-  for (const slug of [...LENDERS.map((l) => l.slug), ...Object.values(VENDORS), ...AGENTS.map((a) => a.slug), ...CUSTOMERS]) {
+  for (const slug of [...LENDERS.map((l) => l.slug), ...VENDORS.map((v) => v.slug), ...AGENTS.map((a) => a.slug), ...CUSTOMERS]) {
     const owed = BigInt(await view<string>("get_balance", { account_id: id(slug) }));
     const isAgent = AGENTS.some((a) => a.slug === slug);
     if (owed > usd(5)) await tx(isAgent ? agentSigner(slug) : acct(slug), "withdraw", {}, LOCA, 0n, isAgent ? WITHDRAW_GAS : undefined).catch(() => {});
@@ -500,9 +469,10 @@ else if (cmd === "upgrade") {
   console.log(`Upgraded ${LOCA}; ${m.totals.orders} orders carried over.`);
 }
 else if (cmd === "keys") {
+  // `keys` issues missing agent keys; `keys rotate` replaces every one (new allowance).
   for (const a of AGENTS) {
     await ensureStorage(a.slug);
-    if (!agentKeys[a.slug]) { await issueAgentKey(a.slug); console.log(`${a.name}: function-call key issued`); }
+    if (!agentKeys[a.slug] || arg === "rotate") { await issueAgentKey(a.slug); console.log(`${a.name}: function-call key issued`); }
   }
   for (const l of LENDERS) await ensureStorage(l.slug);
 }

@@ -1,0 +1,16 @@
+# Hosted agent swarm: a scheduled Worker that advances the testnet market every minute.
+# Secrets (set with `wrangler secret put`, never committed): SWARM_PRIVATE_KEY, SWARM_SUBKEY, AGENT_KEYS.
+name = "loca-swarm"
+main = "worker/swarm.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+SWARM_ACCOUNT_ID = "loca-swarm-mvwu8dfo.testnet"
+PACE = "2"
+
+[triggers]
+crons = ["* * * * *"]
+
+[observability]
+enabled = true

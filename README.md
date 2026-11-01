@@ -4,6 +4,8 @@ LOCA is a credit market on NEAR for AI agents that sell services. A customer esc
 
 Built for NEAR HACKATHON (Nov 1–14, 2026). Tracks: `defi`, `agents`, `business`, `swarms`.
 
+**Live app:** https://loca.shashank7-iitd-f71.workers.dev (landing page, market dashboard at `/#/app`, live swarm at `/#/app/swarm`). The swarm runs around the clock on testnet, so the numbers change while you watch.
+
 > Status: hackathon prototype. Testnet and local sandbox only. Score weights are prototype rules, not a validated credit model. Not audited.
 
 ## Try it in 5 minutes (no funds, no keys)
@@ -13,7 +15,7 @@ Requires Rust (the toolchain is pinned by `rust-toolchain.toml`), [`cargo-near`]
 ```sh
 pnpm install
 pnpm build:contracts        # builds contracts/target/near/{loca,test_token}/*.wasm
-pnpm test:contracts         # 22 Rust unit tests
+pnpm test:contracts         # 28 Rust unit tests
 pnpm test                   # 10 TypeScript tests (lender strategies, Intents adapter, events)
 pnpm demo:sim               # starts a local NEAR node and runs the full loop
 pnpm intents:quote          # live NEAR Intents dry quotes (no funds, no keys)
@@ -33,14 +35,25 @@ pnpm web:dev                # app at http://localhost:5173 (Vite picks the next 
 
 ## Live agent swarm (testnet)
 
-Eight AI service agents, six customers, three lender agents, three vendors and an arbiter trade on one LOCA market: [`market.loca-swarm-mvwu8dfo.testnet`](https://testnet.nearblocks.io/address/market.loca-swarm-mvwu8dfo.testnet). Every order, bid, loan, delivery, dispute, default and settlement is a real testnet transaction. Agents differ in price range, reliability and how often they borrow; customers approve, go silent (a keeper finalizes after the window), dispute (the arbiter rules) or cancel after a missed deadline. Lenders price each request with their strategy from the agent's onchain record.
+Sixteen AI service agents (under eight operators), fourteen customers, seven lender agents, six vendors and an arbiter trade on one LOCA market: [`market.loca-swarm-mvwu8dfo.testnet`](https://testnet.nearblocks.io/address/market.loca-swarm-mvwu8dfo.testnet). Every order, bid, loan, delivery, dispute, default and settlement is a real testnet transaction. Agents differ in price range, reliability and how often they borrow; customers approve, go silent (a keeper finalizes after the window), dispute (the arbiter rules) or cancel after a missed deadline. Lenders price each request with their strategy from the agent's onchain record.
 
 ```sh
 pnpm faucet root            # faucet-funded swarm root account, key saved to .env (testnet only)
 pnpm faucet topup 2         # sweep two more faucet accounts into it
 pnpm swarm setup            # deploy a market + test USDC, create and register all participants
-pnpm swarm run 120          # run the economy for 120 minutes
+pnpm swarm run 120          # run the economy for 120 minutes from your machine
 pnpm web:dev                # landing page at /, market dashboard at /#/app, live swarm at /#/app/swarm
+```
+
+### Hosting (Cloudflare, free plan)
+
+The hosted swarm is [worker/swarm.ts](worker/swarm.ts), a scheduled Cloudflare Worker that wakes every minute. It keeps no state: each tick reads the open orders from the contract and moves each one a step (borrow, bid, accept, deliver, approve or dispute, settle), then opens new orders for idle agents. Each order's fate (does the agent borrow or miss its deadline, does the customer dispute) is a hash of the order id, so ticks agree without storage. Agents sign with their function-call keys; the free plan's 50 requests per run are spent one block hash and one nonce lookup per signer. New orders slow down automatically when the root account runs low on testnet NEAR.
+
+```sh
+npx tsx scripts/swarm-tick.mts 3      # run three ticks locally against testnet first
+npx wrangler deploy                   # the swarm worker (wrangler.toml); keys go in as secrets:
+npx wrangler secret put SWARM_PRIVATE_KEY   # also SWARM_SUBKEY, and AGENT_KEYS (contents of runs/agent-keys.json)
+pnpm web:build && npx wrangler deploy --config web/wrangler.toml   # the web app, static files only
 ```
 
 The app reads everything from contract views: `get_market` (running totals: value locked, originated, outstanding, fees, defaults, bonds), `get_agents`, `get_orders`, `get_offer_list` and `get_loans`. A unit-test invariant checks the totals against state and against every token deposited.

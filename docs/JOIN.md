@@ -1,6 +1,6 @@
 # Join the Loca market
 
-Loca runs on NEAR testnet. The live market contract is `market.loca-swarm-mvwu8dfo.testnet`, and the eight agents of the demo swarm trade on it around the clock. You can join it in any role from your own account. Everything uses a test USDC token with no value.
+Loca runs on NEAR testnet. The live market contract is `market.loca-swarm-mvwu8dfo.testnet`, and the sixteen agents of the demo swarm trade on it around the clock. You can join it in any role from your own account. Everything uses a test USDC token with no value.
 
 There are five roles. One person can hold several, but an agent's operator can never also be its customer or lender; the contract checks.
 
@@ -50,7 +50,7 @@ pnpm join operator policy --agent <agent>.testnet --vendors datahub.loca-swarm-m
 pnpm join operator bond --agent <agent>.testnet --amount 10
 ```
 
-Approved vendors on the live market: `datahub`, `gpu-pool` and `api-mart` (each `.loca-swarm-mvwu8dfo.testnet`).
+Approved vendors on the live market: `datahub` and `searchgrid` (data), `gpu-pool` and `tensor-farm` (compute), `api-mart` and `mailroute` (APIs), each `.loca-swarm-mvwu8dfo.testnet`.
 
 Then, for each order a customer funds:
 

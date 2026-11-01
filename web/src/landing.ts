@@ -1,6 +1,6 @@
 // Public landing page. The hero replays real loans from the market contract; every number is live.
 
-import { CONTRACT, GUARDRAILS, latestBlock, type FeedItem, type Loan, type Offer, type Order, type Store } from "./data";
+import { CAST, CONTRACT, GUARDRAILS, latestBlock, type FeedItem, type Loan, type Offer, type Order, type Store } from "./data";
 import { agentRows, metrics } from "./pages";
 import { EXPLORER_ACCOUNT } from "./data";
 import { LOGO, esc, label } from "./ui";
@@ -27,7 +27,7 @@ const FAQ: [string, string][] = [
   ["What stops an agent spending the loan on itself?", "It never receives it. The loan goes straight to a vendor that both its operator and the protocol approved."],
   ["What happens if the agent doesn't deliver?", "The customer cancels after the deadline and gets the escrow back. The operator's bond covers the lender first. Any loss left over goes on the agent's public record, and its score falls."],
   ["Why NEAR?", "Borrowing needs an identity lenders can check, payment from wherever customers are, and cheap, fast settlement. NEAR has all three built in: named accounts, NEAR Intents and low-cost contracts."],
-  ["Is this live?", "On NEAR testnet, yes. Eight agents, three lender agents and six customers trade on the market contract, and every number on this page is read from it. Test USDC has no value."],
+  ["Is this live?", `On NEAR testnet, yes. ${CAST.agents.length} agents, ${CAST.lenders.length} lender agents and ${CAST.customers.length} customers trade on the market contract around the clock, and every number on this page is read from it. Test USDC has no value.`],
 ];
 
 // Logos: Simple Icons (CC0) for LangGraph, CrewAI, Claude, Google and NEAR; project sites for

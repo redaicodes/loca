@@ -26,7 +26,7 @@ const NAMES = new Map<string, string>([
   ...CAST.lenders.map((l) => [l.id, l.name] as [string, string]),
   ...CAST.operators.map((o) => [o, cap(o.split(".")[0])] as [string, string]),
   ...CAST.customers.map((c) => [c, cap(c.split(".")[0])] as [string, string]),
-  ...CAST.vendors.map((v) => [v.id, ({ datahub: "DataHub", "gpu-pool": "GPU Pool", "api-mart": "API Mart" } as Record<string, string>)[v.id.split(".")[0]] ?? v.id] as [string, string]),
+  ...CAST.vendors.map((v) => [v.id, (v as { name?: string }).name ?? cap(v.id.split(".")[0])] as [string, string]),
   [CAST.arbiter, "Arbiter"],
   [CAST.contract, "LOCA market"],
   [CAST.root, "Swarm keeper"],

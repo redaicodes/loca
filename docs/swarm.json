@@ -1,6 +1,6 @@
 {
   "network": "testnet",
-  "createdAt": "2026-10-31T20:20:45.896Z",
+  "createdAt": "2026-11-01T10:07:20.106Z",
   "root": "loca-swarm-mvwu8dfo.testnet",
   "contract": "market.loca-swarm-mvwu8dfo.testnet",
   "token": "usdc.loca-swarm-mvwu8dfo.testnet",
@@ -52,13 +52,65 @@
       "name": "Nova Support",
       "service": "support triage",
       "operator": "orbit.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "sage.loca-swarm-mvwu8dfo.testnet",
+      "name": "Sage Contracts",
+      "service": "contract review",
+      "operator": "meridian.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "relay.loca-swarm-mvwu8dfo.testnet",
+      "name": "Relay Ops",
+      "service": "workflow automation",
+      "operator": "meridian.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "prism.loca-swarm-mvwu8dfo.testnet",
+      "name": "Prism Analytics",
+      "service": "data dashboards",
+      "operator": "summit.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "vector.loca-swarm-mvwu8dfo.testnet",
+      "name": "Vector Search",
+      "service": "search indexing",
+      "operator": "summit.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "harbor.loca-swarm-mvwu8dfo.testnet",
+      "name": "Harbor Freight Desk",
+      "service": "shipment tracking",
+      "operator": "lattice.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "tally.loca-swarm-mvwu8dfo.testnet",
+      "name": "Tally Payroll",
+      "service": "payroll runs",
+      "operator": "lattice.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "lumen.loca-swarm-mvwu8dfo.testnet",
+      "name": "Lumen Video",
+      "service": "video editing",
+      "operator": "cobalt.loca-swarm-mvwu8dfo.testnet"
+    },
+    {
+      "id": "cipher.loca-swarm-mvwu8dfo.testnet",
+      "name": "Cipher Scan",
+      "service": "security scans",
+      "operator": "cobalt.loca-swarm-mvwu8dfo.testnet"
     }
   ],
   "operators": [
     "northwind.loca-swarm-mvwu8dfo.testnet",
     "helix.loca-swarm-mvwu8dfo.testnet",
     "kite.loca-swarm-mvwu8dfo.testnet",
-    "orbit.loca-swarm-mvwu8dfo.testnet"
+    "orbit.loca-swarm-mvwu8dfo.testnet",
+    "meridian.loca-swarm-mvwu8dfo.testnet",
+    "summit.loca-swarm-mvwu8dfo.testnet",
+    "lattice.loca-swarm-mvwu8dfo.testnet",
+    "cobalt.loca-swarm-mvwu8dfo.testnet"
   ],
   "customers": [
     "acme.loca-swarm-mvwu8dfo.testnet",
@@ -66,7 +118,15 @@
     "corvid.loca-swarm-mvwu8dfo.testnet",
     "delta.loca-swarm-mvwu8dfo.testnet",
     "evergreen.loca-swarm-mvwu8dfo.testnet",
-    "fjord.loca-swarm-mvwu8dfo.testnet"
+    "fjord.loca-swarm-mvwu8dfo.testnet",
+    "granite.loca-swarm-mvwu8dfo.testnet",
+    "halcyon.loca-swarm-mvwu8dfo.testnet",
+    "ironwood.loca-swarm-mvwu8dfo.testnet",
+    "juniper.loca-swarm-mvwu8dfo.testnet",
+    "kestrel.loca-swarm-mvwu8dfo.testnet",
+    "lyra.loca-swarm-mvwu8dfo.testnet",
+    "maple.loca-swarm-mvwu8dfo.testnet",
+    "nimbus.loca-swarm-mvwu8dfo.testnet"
   ],
   "lenders": [
     {
@@ -83,19 +143,57 @@
       "id": "spread-credit.loca-swarm-mvwu8dfo.testnet",
       "name": "Spread Credit",
       "strategy": "concentration-aware"
+    },
+    {
+      "id": "keel-lending.loca-swarm-mvwu8dfo.testnet",
+      "name": "Keel Lending",
+      "strategy": "escrow-coverage"
+    },
+    {
+      "id": "beacon-credit.loca-swarm-mvwu8dfo.testnet",
+      "name": "Beacon Credit",
+      "strategy": "repayment-history"
+    },
+    {
+      "id": "quarry-fund.loca-swarm-mvwu8dfo.testnet",
+      "name": "Quarry Fund",
+      "strategy": "concentration-aware"
+    },
+    {
+      "id": "tidewater.loca-swarm-mvwu8dfo.testnet",
+      "name": "Tidewater Capital",
+      "strategy": "escrow-coverage"
     }
   ],
   "vendors": [
     {
       "id": "datahub.loca-swarm-mvwu8dfo.testnet",
+      "name": "DataHub",
+      "kind": "data"
+    },
+    {
+      "id": "searchgrid.loca-swarm-mvwu8dfo.testnet",
+      "name": "SearchGrid",
       "kind": "data"
     },
     {
       "id": "gpu-pool.loca-swarm-mvwu8dfo.testnet",
+      "name": "GPU Pool",
+      "kind": "compute"
+    },
+    {
+      "id": "tensor-farm.loca-swarm-mvwu8dfo.testnet",
+      "name": "Tensor Farm",
       "kind": "compute"
     },
     {
       "id": "api-mart.loca-swarm-mvwu8dfo.testnet",
+      "name": "API Mart",
+      "kind": "api"
+    },
+    {
+      "id": "mailroute.loca-swarm-mvwu8dfo.testnet",
+      "name": "MailRoute",
       "kind": "api"
     }
   ],

@@ -4,7 +4,7 @@ import { CAST, type FeedItem, type Order, type Store } from "./data";
 import { agentHref, agentRows, feedList, head, metrics } from "./pages";
 import { ago, esc, label, usd } from "./ui";
 
-const W = 940, H = 470;
+const W = 940, H = 600;
 type Node = { id: string; x: number; y: number; kind: "customer" | "agent" | "lender" | "vendor" };
 
 function layout(): Map<string, Node> {
@@ -13,8 +13,8 @@ function layout(): Map<string, Node> {
   const nodes = [
     ...col(CAST.customers, 110, 60, H - 60, "customer"),
     ...col(CAST.agents.map((a) => a.id), 470, 40, H - 40, "agent"),
-    ...col(CAST.lenders.map((l) => l.id), 780, 50, 200, "lender"),
-    ...col(CAST.vendors.map((v) => v.id), 780, 290, H - 50, "vendor"),
+    ...col(CAST.lenders.map((l) => l.id), 780, 50, 270, "lender"),
+    ...col(CAST.vendors.map((v) => v.id), 780, 350, H - 50, "vendor"),
   ];
   return new Map(nodes.map((nd) => [nd.id, nd]));
 }
@@ -97,7 +97,7 @@ function network(s: Store) {
         <text x="${nd.x + dx}" y="${nd.y + 4}" text-anchor="${anchor}" class="nl">${esc(name)}${sub ? ` <tspan class="ns">${sub}</tspan>` : ""}</text></g>`;
     })
     .join("");
-  const heads = `<text x="110" y="18" text-anchor="middle" class="colh">CUSTOMERS</text><text x="470" y="18" text-anchor="middle" class="colh">AGENTS · SCORE</text><text x="780" y="30" class="colh" text-anchor="middle">LENDERS</text><text x="780" y="270" class="colh" text-anchor="middle">VENDORS</text>`;
+  const heads = `<text x="110" y="18" text-anchor="middle" class="colh">CUSTOMERS</text><text x="470" y="18" text-anchor="middle" class="colh">AGENTS · SCORE</text><text x="780" y="30" class="colh" text-anchor="middle">LENDERS</text><text x="780" y="326" class="colh" text-anchor="middle">VENDORS</text>`;
   return `<svg id="sw-svg" class="net" viewBox="0 0 ${W} ${H}" role="img" aria-label="Network of customers, agents, lenders and vendors trading in the last 30 minutes">${heads}<g id="sw-edges">${lines}</g><g id="sw-pulses"></g>${nodes}</svg>`;
 }
 
@@ -115,7 +115,7 @@ function agentTiles(s: Store) {
 }
 
 export function swarmPage(s: Store, feed: FeedItem[]) {
-  return `${head("Agent swarm", `Eight AI service agents, six customers, three lender agents and three vendors trading on one LOCA market on NEAR testnet. Every number below is read from the contract as it changes.`, `<span class="live-tag"><i></i>Live · <span id="sw-age">now</span></span>`)}
+  return `${head("Agent swarm", `${CAST.agents.length} AI service agents, ${CAST.customers.length} customers, ${CAST.lenders.length} lender agents and ${CAST.vendors.length} vendors trading on one Loca market on NEAR testnet. Every number below is read from the contract as it changes.`, `<span class="live-tag"><i></i>Live · <span id="sw-age">now</span></span>`)}
   <div class="kpis" id="sw-counters">${counters(s, feed)}</div>
   <div class="grid g-12">
     <section class="card span-8"><div class="card-h"><h2>Who is trading with whom</h2><span class="legend small"><span><i class="c-escrow"></i>escrow</span><span><i class="c-offer"></i>credit</span><span><i class="c-bond"></i>spend</span></span></div>

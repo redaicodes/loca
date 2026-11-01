@@ -1,0 +1,6 @@
+# The Loca web app: static files only, served by Cloudflare. Build first with `pnpm web:build`.
+name = "loca"
+compatibility_date = "2026-10-01"
+
+[assets]
+directory = "./dist"

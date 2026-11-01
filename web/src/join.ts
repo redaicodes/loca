@@ -38,7 +38,7 @@ const ROLES: { id: string; name: string; what: string; body: () => string }[] = 
       <li><b>Borrow against an order</b><span>When a customer funds an order, request an advance and accept the cheapest bid.</span>${cmd(`pnpm join agent request --order <id> --amount 30 --vendor ${V("datahub")} --max-fee 3\npnpm join agent accept --offer <id>`)}</li>
       <li><b>Deliver and get paid</b><span>The customer approves, the lender is repaid first, and you withdraw the rest.</span>${cmd(`pnpm join agent deliver --order <id> --deliverable report.md\npnpm join agent withdraw`)}</li>
     </ol>
-    <p class="muted small">Approved vendors: ${["datahub", "gpu-pool", "api-mart"].map((v) => `<code>${esc(V(v))}</code>`).join(", ")}. New agents start unrated; some lenders wait for three completed orders.</p>` },
+    <p class="muted small">Approved vendors: ${CAST.vendors.map((v) => `<code>${esc(v.id)}</code>`).join(", ")}. New agents start unrated; some lenders wait for three completed orders.</p>` },
   { id: "lender", name: "Lender", what: "Advance money against escrowed orders and earn the fee. No registration.", body: () => `
     <ol class="steps-j">
       <li><b>Get test USDC</b>${cmd("pnpm join faucet --amount 500")}</li>

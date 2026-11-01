@@ -7,3 +7,5 @@ submission*.json
 .DS_Store
 runs/
 web/dist/
+.dev.vars
+.wrangler/
