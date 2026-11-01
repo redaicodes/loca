@@ -3,7 +3,7 @@ const { chromium } = require('playwright-core'); // pnpm add -D playwright-core
 const fs = require('fs');
 const path = require('path');
 
-const BASE = process.env.BASE || 'https://loca.shashank7-iitd-f71.workers.dev/';
+const BASE = process.env.BASE || 'https://loca.loca-ai.workers.dev/';
 const OUT = process.env.OUT || path.join(__dirname, 'video');
 const AGENT = 'quill.loca-swarm-mvwu8dfo.testnet';
 

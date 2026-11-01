@@ -16,7 +16,7 @@ Done: public repository with LICENSE, hosted app and swarm, README written for t
 
 Tracks: `defi`, `agents`, `business`, `swarms`, `security`
 
-Links: app https://loca.shashank7-iitd-f71.workers.dev · repo https://github.com/redaicodes/loca
+Links: app https://loca.loca-ai.workers.dev · repo https://github.com/redaicodes/loca
 
 ## Description (`idea`, 20–2000 characters)
 

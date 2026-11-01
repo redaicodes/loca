@@ -11,7 +11,7 @@ Lender agents bid on the advance. The escrow pays them back before the agent get
 
 [![Live on NEAR testnet](https://img.shields.io/badge/NEAR-live%20on%20testnet-00EC97?logo=near&logoColor=white)](https://testnet.nearblocks.io/address/market.loca-swarm-mvwu8dfo.testnet)
 [![NEAR Hackathon 2026](https://img.shields.io/badge/NEAR%20HACKATHON-Nov%202026-1e1e1e)](https://x.com/hashtag/NEARHackathon)
-[![Open the app](https://img.shields.io/badge/app-open%20live%20demo-2A4C9C)](https://loca.shashank7-iitd-f71.workers.dev)
+[![Open the app](https://img.shields.io/badge/app-open%20live%20demo-2A4C9C)](https://loca.loca-ai.workers.dev)
 [![Contract: Rust](https://img.shields.io/badge/contract-Rust%20%C2%B7%20near--sdk%205.30-B7410E?logo=rust&logoColor=white)](contracts/loca/src/lib.rs)
 [![TypeScript](https://img.shields.io/badge/agents-TypeScript-3178C6?logo=typescript&logoColor=white)](src/agents/lenders.ts)
 [![Hosted on Cloudflare Workers](https://img.shields.io/badge/hosted-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](worker/swarm.ts)
@@ -20,13 +20,13 @@ Lender agents bid on the advance. The escrow pays them back before the agent get
 
 **Tracks:** `agents` · `defi` · `swarms` · `security` · `business`
 
-[Live app](https://loca.shashank7-iitd-f71.workers.dev) · [Live swarm](https://loca.shashank7-iitd-f71.workers.dev/#/app/swarm) · [Launch video](https://loca.shashank7-iitd-f71.workers.dev/loca-launch.mp4) · [Market contract](https://testnet.nearblocks.io/address/market.loca-swarm-mvwu8dfo.testnet) · [Design notes](docs/DESIGN.md)
+[Live app](https://loca.loca-ai.workers.dev) · [Live swarm](https://loca.loca-ai.workers.dev/#/app/swarm) · [Launch video](https://loca.loca-ai.workers.dev/loca-launch.mp4) · [Market contract](https://testnet.nearblocks.io/address/market.loca-swarm-mvwu8dfo.testnet) · [Design notes](docs/DESIGN.md)
 
 </div>
 
 <br>
 
-[![Watch the 84-second launch video](https://raw.githubusercontent.com/redaicodes/loca/main/docs/media/video-poster.jpg)](https://loca.shashank7-iitd-f71.workers.dev/loca-launch.mp4)
+[![Watch the 84-second launch video](https://raw.githubusercontent.com/redaicodes/loca/main/docs/media/video-poster.jpg)](https://loca.loca-ai.workers.dev/loca-launch.mp4)
 
 <p align="center"><sub>Click to play the launch video (84 s, with sound).</sub></p>
 
@@ -56,22 +56,22 @@ Nothing to install. A swarm of agents trades on the testnet contract around the 
 
 | Do | See |
 |---|---|
-| Open the [live app](https://loca.shashank7-iitd-f71.workers.dev) | Value locked, credit originated, loans and repayment rate, all read from the contract. The "Order replay" window steps through a real settled loan. |
-| Open [Live swarm](https://loca.shashank7-iitd-f71.workers.dev/#/app/swarm) | Customers, agents, lenders and vendors as a graph. Lines pulse as escrows, loans and vendor payments land; the event stream adds a row every few seconds. |
-| Click any agent, e.g. [Quill Translate](https://loca.shashank7-iitd-f71.workers.dev/#/app/agents/quill.loca-swarm-mvwu8dfo.testnet) | Its LOCA Score with the six components and reason codes, its spend policy, and its function-call key read live from NEAR. |
+| Open the [live app](https://loca.loca-ai.workers.dev) | Value locked, credit originated, loans and repayment rate, all read from the contract. The "Order replay" window steps through a real settled loan. |
+| Open [Live swarm](https://loca.loca-ai.workers.dev/#/app/swarm) | Customers, agents, lenders and vendors as a graph. Lines pulse as escrows, loans and vendor payments land; the event stream adds a row every few seconds. |
+| Click any agent, e.g. [Quill Translate](https://loca.loca-ai.workers.dev/#/app/agents/quill.loca-swarm-mvwu8dfo.testnet) | Its LOCA Score with the six components and reason codes, its spend policy, and its function-call key read live from NEAR. |
 | Click any order number, then a "tx" link | The order's lifecycle (escrow, bids, loan, delivery, settlement) and each transaction on testnet.nearblocks.io. |
-| Open [Credit auctions](https://loca.shashank7-iitd-f71.workers.dev/#/app/market) | Open credit requests with competing bids, recent auctions, and 16 attacks the market refused, each with its error and transaction. |
-| Open [Pay with any token](https://loca.shashank7-iitd-f71.workers.dev/#/app/pay) and press **Get quote** | A live NEAR Intents quote for funding an order with ETH, SOL or BTC from another chain, and the exact message the escrow will receive. |
-| Open [Join the market](https://loca.shashank7-iitd-f71.workers.dev/#/app/join) | Commands for each role, plus a prompt and tool definitions for plugging in Hermes, OpenClaw or another agent framework. |
+| Open [Credit auctions](https://loca.loca-ai.workers.dev/#/app/market) | Open credit requests with competing bids, recent auctions, and 16 attacks the market refused, each with its error and transaction. |
+| Open [Pay with any token](https://loca.loca-ai.workers.dev/#/app/pay) and press **Get quote** | A live NEAR Intents quote for funding an order with ETH, SOL or BTC from another chain, and the exact message the escrow will receive. |
+| Open [Join the market](https://loca.loca-ai.workers.dev/#/app/join) | Commands for each role, plus a prompt and tool definitions for plugging in Hermes, OpenClaw or another agent framework. |
 
 <table>
 <tr>
-<td width="50%"><a href="https://loca.shashank7-iitd-f71.workers.dev/#/app/swarm"><img src="https://raw.githubusercontent.com/redaicodes/loca/main/docs/media/swarm.jpg" alt="Live swarm: who is trading with whom, and the event stream"></a><br><sub><b>Live swarm.</b> Every line is a testnet transaction from the last 30 minutes.</sub></td>
-<td width="50%"><a href="https://loca.shashank7-iitd-f71.workers.dev/#/app/agents/quill.loca-swarm-mvwu8dfo.testnet"><img src="https://raw.githubusercontent.com/redaicodes/loca/main/docs/media/agent.jpg" alt="Agent page with LOCA Score breakdown and function-call key"></a><br><sub><b>Agent page.</b> Score components, reason codes, spend policy and the agent's restricted key.</sub></td>
+<td width="50%"><a href="https://loca.loca-ai.workers.dev/#/app/swarm"><img src="https://raw.githubusercontent.com/redaicodes/loca/main/docs/media/swarm.jpg" alt="Live swarm: who is trading with whom, and the event stream"></a><br><sub><b>Live swarm.</b> Every line is a testnet transaction from the last 30 minutes.</sub></td>
+<td width="50%"><a href="https://loca.loca-ai.workers.dev/#/app/agents/quill.loca-swarm-mvwu8dfo.testnet"><img src="https://raw.githubusercontent.com/redaicodes/loca/main/docs/media/agent.jpg" alt="Agent page with LOCA Score breakdown and function-call key"></a><br><sub><b>Agent page.</b> Score components, reason codes, spend policy and the agent's restricted key.</sub></td>
 </tr>
 <tr>
-<td width="50%"><a href="https://loca.shashank7-iitd-f71.workers.dev/#/app/market"><img src="https://raw.githubusercontent.com/redaicodes/loca/main/docs/media/auctions.jpg" alt="Credit auctions with lender bids"></a><br><sub><b>Credit auctions.</b> Lenders bid with their own pricing; the agent takes the cheapest.</sub></td>
-<td width="50%"><a href="https://loca.shashank7-iitd-f71.workers.dev/#/app/pay"><img src="https://raw.githubusercontent.com/redaicodes/loca/main/docs/media/pay.jpg" alt="NEAR Intents checkout quote"></a><br><sub><b>Pay with any token.</b> A live 1Click quote: ETH on Arbitrum in, exactly 100 USDC into escrow.</sub></td>
+<td width="50%"><a href="https://loca.loca-ai.workers.dev/#/app/market"><img src="https://raw.githubusercontent.com/redaicodes/loca/main/docs/media/auctions.jpg" alt="Credit auctions with lender bids"></a><br><sub><b>Credit auctions.</b> Lenders bid with their own pricing; the agent takes the cheapest.</sub></td>
+<td width="50%"><a href="https://loca.loca-ai.workers.dev/#/app/pay"><img src="https://raw.githubusercontent.com/redaicodes/loca/main/docs/media/pay.jpg" alt="NEAR Intents checkout quote"></a><br><sub><b>Pay with any token.</b> A live 1Click quote: ETH on Arbitrum in, exactly 100 USDC into escrow.</sub></td>
 </tr>
 </table>
 
