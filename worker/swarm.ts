@@ -8,7 +8,7 @@
 // Free-plan limits shape the code: at most 50 network requests and a few ms of CPU per run, so one block
 // hash and one nonce lookup per signer are shared across a tick, and signing uses native WebCrypto.
 
-import { actions, baseDecode, base64Encode, createTransaction, encodeTransaction, KeyType, PublicKey, Signature, SignedTransaction } from "near-api-js";
+import { actions, baseDecode, baseEncode, base64Encode, createTransaction, encodeTransaction, KeyType, PublicKey, Signature, SignedTransaction } from "near-api-js";
 import type { BidContext } from "../src/agents/lenders.js";
 import { AGENT_METHODS, AGENTS, CUSTOMERS, DISPUTE_WINDOW_SEC, LENDERS, OPERATORS, VENDORS, lenderQuote, vendorsOf, type AgentSpec } from "../src/swarm/cast.js";
 import type { Agent, Loan, Offer, Order, ScoreReport } from "../src/lib/types.js";
@@ -23,6 +23,8 @@ export interface Env {
   /** New orders opened per tick when the root is well funded. */
   PACE?: string;
   PAUSED?: string;
+  /** Refill the root from the faucet below this many testnet NEAR (default 60). */
+  TOPUP_BELOW?: string;
 }
 
 const TGAS = 1_000_000_000_000n;
@@ -366,6 +368,39 @@ function upkeepTasks(): Task[] {
 }
 const UPKEEP = upkeepTasks();
 
+// ---------------------------------------------------------------- faucet top-up
+
+const TOPUP_EVERY_MIN = 15;
+
+/** Creates a throwaway account with the testnet faucet and deletes it into the root, which moves its
+ *  whole balance there. The faucet rate-limits by IP; a refusal is logged and retried next window. */
+async function faucetTopup(c: Ctx) {
+  const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
+  const jwk = (await crypto.subtle.exportKey("jwk", pair.privateKey)) as { d: string; x: string };
+  const bytes = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0));
+  const secret = `ed25519:${baseEncode(new Uint8Array([...bytes(jwk.d), ...bytes(jwk.x)]))}`;
+  const tmp = new Signer(`loca-tmp-${Date.now().toString(36)}.testnet`, secret);
+  c.chain.requests++;
+  const res = await fetch("https://helper.nearprotocol.com/account", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ newAccountId: tmp.accountId, newAccountPublicKey: tmp.publicKey.toString() }),
+  });
+  if (!res.ok) {
+    c.log("topup", `faucet refused (${res.status}): ${(await res.text()).slice(0, 80)}`);
+    return;
+  }
+  // The faucet answers before the account is visible to RPC; wait for it.
+  for (let i = 0; ; i++) {
+    await new Promise((r) => setTimeout(r, 2500));
+    if (await c.chain.account(tmp.accountId).then(() => true, () => false)) break;
+    if (i === 5) throw new Error(`${tmp.accountId} never appeared`);
+  }
+  // The gas refund goes to the deleted account and fails with AccountDoesNotExist; the sweep itself succeeded.
+  const hash = await c.chain.send(tmp, tmp.accountId, actions.deleteAccount(c.env.SWARM_ACCOUNT_ID))
+    .catch((e) => { if (e instanceof TxFailed && /AccountDoesNotExist/.test(e.message)) return e.hash; throw e; });
+  c.log("topup", `faucet account ${tmp.accountId} swept into the root`, { tx: hash });
+}
+
 // ---------------------------------------------------------------- entry
 
 export async function tick(env: Env): Promise<{ requests: number; txs: number; steps: number }> {
@@ -415,10 +450,14 @@ export async function tick(env: Env): Promise<{ requests: number; txs: number; s
       }
     }
 
-    // Pace new orders by the root's NEAR, since every order permanently uses some contract storage.
+    // Pace new orders by the root's NEAR, since every order permanently uses some contract storage,
+    // and refill the root from the testnet faucet when it runs low.
     if (!env.PAUSED && chain.left() >= 8) {
       const root = await chain.account(rootId);
       const near = Number(BigInt(root.amount) / NEAR);
+      if (near < Number(env.TOPUP_BELOW ?? 60) && minute % TOPUP_EVERY_MIN === 0) {
+        await faucetTopup(c).catch((e) => c.log("error", `topup: ${String((e as Error).message).slice(0, 140)}`));
+      }
       const pace = Number(env.PACE ?? 2);
       const count = near > 40 ? pace : near > 15 ? 1 : near > 5 ? (minute % 3 === 0 ? 1 : 0) : 0;
       if (count === 0) c.log("paused", `root has ${near} testnet NEAR; new orders paused until it is topped up`);
