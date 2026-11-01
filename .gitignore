@@ -9,3 +9,4 @@ runs/
 web/dist/
 .dev.vars
 .wrangler/
+web/video/shots/

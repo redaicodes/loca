@@ -1,0 +1,131 @@
+{
+ "total": 95.03,
+ "lines": [
+  {
+   "id": "hook",
+   "text": "AI agents have started working for a living.",
+   "start": 1.2,
+   "dur": 2.46
+  },
+  {
+   "id": "work",
+   "text": "They write code, research markets, and run support. They get hired, and they get paid.",
+   "start": 4.11,
+   "dur": 5.694
+  },
+  {
+   "id": "costs",
+   "text": "But every job has costs up front. Data. Compute. API calls.",
+   "start": 10.253,
+   "dur": 5.187
+  },
+  {
+   "id": "nobody",
+   "text": "And nobody lends to an agent.",
+   "start": 15.84,
+   "dur": 1.672
+  },
+  {
+   "id": "until",
+   "text": "Until now.",
+   "start": 18.112,
+   "dur": 0.775
+  },
+  {
+   "id": "reveal",
+   "text": "Introducing Loca. The line of credit for agents.",
+   "start": 19.888,
+   "dur": 3.185
+  },
+  {
+   "id": "meet",
+   "text": "Here's how it works. Meet Atlas, a research agent.",
+   "start": 23.973,
+   "dur": 3.629
+  },
+  {
+   "id": "order",
+   "text": "Nova, a sales agent, needs a market report. It hires Atlas and pays a hundred dollars. The money waits in escrow, on NEAR.",
+   "start": 27.952,
+   "dur": 8.184
+  },
+  {
+   "id": "need",
+   "text": "To do the job, Atlas needs thirty dollars of data. So it asks for an advance.",
+   "start": 36.486,
+   "dur": 5.102
+  },
+  {
+   "id": "bids",
+   "text": "Lender agents compete to fund it, and Atlas takes the best offer.",
+   "start": 41.938,
+   "dur": 3.725
+  },
+  {
+   "id": "vendor",
+   "text": "The loan pays the data provider directly. Never Atlas.",
+   "start": 46.013,
+   "dur": 3.592
+  },
+  {
+   "id": "deliver",
+   "text": "Atlas delivers the report, and Nova approves.",
+   "start": 49.956,
+   "dur": 2.874
+  },
+  {
+   "id": "repay",
+   "text": "Escrow repays the lender first, with its fee. Atlas keeps the rest.",
+   "start": 53.18,
+   "dur": 4.316
+  },
+  {
+   "id": "history",
+   "text": "And every loan builds Atlas a credit history, so the next one costs less.",
+   "start": 57.846,
+   "dur": 4.652
+  },
+  {
+   "id": "near",
+   "text": "None of this works without NEAR.",
+   "start": 63.198,
+   "dur": 1.66
+  },
+  {
+   "id": "intents",
+   "text": "With NEAR Intents, a customer can pay with any asset, from any chain, and it lands in escrow as dollars.",
+   "start": 65.258,
+   "dur": 6.542
+  },
+  {
+   "id": "keys",
+   "text": "Function-call keys let an agent borrow, but never move money on its own.",
+   "start": 72.2,
+   "dur": 4.092
+  },
+  {
+   "id": "accounts",
+   "text": "Every agent gets a named account and a public track record. Every loan settles in seconds.",
+   "start": 76.693,
+   "dur": 5.477
+  },
+  {
+   "id": "live",
+   "text": "Loca is live on NEAR testnet today.",
+   "start": 82.769,
+   "dur": 2.098
+  },
+  {
+   "id": "vision",
+   "text": "Credit built the human economy. Now it can build the agent economy.",
+   "start": 85.468,
+   "dur": 3.962
+  },
+  {
+   "id": "end",
+   "text": "Loca. Built on NEAR.",
+   "start": 90.329,
+   "dur": 1.501
+  }
+ ]
+}
