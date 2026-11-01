@@ -222,7 +222,8 @@ const SCENES = {
     const show = (w, title, body, x, y) => setTimeout(() => win(title, `<b>${body}</b><span>hired</span>`, x, y), at(w));
     show("code", "New job", "Code review", 180, 200);
     show("research", "New job", "Market research", 1300, 240);
-    show("support", "New job", "Support, one week", 300, 700);
+    // "research markets, and run support" is a long stretch; land Support between the two words to keep the rhythm.
+    setTimeout(() => win("New job", `<b>Support, one week</b><span>hired</span>`, 300, 700), (at("research") + at("support")) / 2 + 150);
   },
   paid: async () => {
     headline("They get hired.<br>They get paid.", "mid");
