@@ -215,21 +215,29 @@ function sub(text) { const s = $("#sub"); s.classList.remove("in"); if (!text) r
 const B = {}; // board elements of the worked example
 const SCENES = {
   hook: () => headline("AI agents have started <em>working for a living.</em>"),
+  // Windows pop in as their word is spoken (estimated from the word's position in the line).
   work: async (l) => {
-    await headline("They get hired.<br>They get paid.", "mid");
-    const d = l.dur * 1000 / 5;
-    await sleep(d * 0.6); win("Order paid", `<b>Research brief</b><span class="ok">+ $120.00 received</span>`, 150, 170);
-    await sleep(d); win("Order paid", `<b>Code review</b><span class="ok">+ $180.00 received</span>`, 1340, 230);
-    await sleep(d); win("Order paid", `<b>Support, one week</b><span class="ok">+ $90.00 received</span>`, 260, 720);
-    await sleep(d); win("Order paid", `<b>Market report</b><span class="ok">+ $140.00 received</span>`, 1240, 700);
+    clearHeadline(); // not awaited: the windows are timed from the start of the line
+    const at = (w) => l.dur * 1000 * (l.text.indexOf(w) / l.text.length);
+    const show = (w, title, body, x, y) => setTimeout(() => win(title, `<b>${body}</b><span>hired</span>`, x, y), at(w));
+    show("code", "New job", "Code review", 180, 200);
+    show("research", "New job", "Market research", 1300, 240);
+    show("support", "New job", "Support, one week", 300, 700);
   },
-  costs: async (l) => {
+  paid: async () => {
+    headline("They get hired.<br>They get paid.", "mid");
+    document.querySelectorAll("#board .win .bar span:first-child").forEach((t) => (t.textContent = "Order paid"));
+    document.querySelectorAll("#board .win .body span").forEach((t, i) => { t.className = "ok"; t.textContent = ["+ $180.00 received", "+ $140.00 received", "+ $90.00 received"][i] || t.textContent; });
+  },
+  costs: async () => {
     await clearBoard();
     headline("Every job has costs<br><em>up front.</em>", "mid");
-    const at = (f) => sleep(l.dur * 1000 * f);
-    await at(0.4); win("Invoice", `<b>Data</b><span class="due">$40.00 due now</span>`, 170, 190);
-    await at(0.15); win("Invoice", `<b>Compute</b><span class="due">$25.00 due now</span>`, 1320, 250);
-    await at(0.16); win("Invoice", `<b>API calls</b><span class="due">$12.00 due now</span>`, 740, 760);
+  },
+  costitems: async (l) => {
+    const at = (w) => l.dur * 1000 * (l.text.indexOf(w) / l.text.length);
+    setTimeout(() => win("Invoice", `<b>Data</b><span class="due">$40.00 due now</span>`, 170, 190), at("Data"));
+    setTimeout(() => win("Invoice", `<b>Compute</b><span class="due">$25.00 due now</span>`, 1320, 250), at("Compute"));
+    setTimeout(() => win("Invoice", `<b>API calls</b><span class="due">$12.00 due now</span>`, 740, 760), at("API"));
   },
   nobody: async () => {
     await clearBoard();
@@ -369,7 +377,7 @@ const SCENES = {
     sub("");
     await clearBoard();
     $("#veil").classList.remove("on");
-    headline("Live on <em>NEAR</em> testnet,<br>today.", "mid");
+    headline("Live on <em>NEAR.</em>", "huge");
   },
   vision: async () => {
     sub("");

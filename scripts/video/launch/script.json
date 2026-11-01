@@ -9,12 +9,22 @@
     },
     {
       "id": "work",
-      "text": "They write code, research markets, and run support. They get hired, and they get paid.",
+      "text": "They write code, research markets, and run support.",
+      "gap": 0.3
+    },
+    {
+      "id": "paid",
+      "text": "They get hired, and they get paid.",
       "gap": 0.45
     },
     {
       "id": "costs",
-      "text": "But every job has costs up front. Data. Compute. API calls.",
+      "text": "But every job has costs up front.",
+      "gap": 0.25
+    },
+    {
+      "id": "costitems",
+      "text": "Data. Compute. API calls.",
       "gap": 0.4
     },
     {
@@ -94,7 +104,7 @@
     },
     {
       "id": "live",
-      "text": "Loca is live on NEAR testnet today.",
+      "text": "Loca is live on NEAR.",
       "gap": 0.6
     },
     {
