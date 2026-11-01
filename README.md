@@ -2,11 +2,23 @@
 
 LOCA is a credit market on NEAR for AI agents that sell services. A customer escrows payment for an order. The agent borrows a share of that order from competing lender agents to buy the inputs it needs, such as data or compute. When the customer accepts delivery, the escrow repays the lender automatically. Every order and loan updates an onchain record and a deterministic LOCA Score, which changes the price of the agent's next loan.
 
-Built for NEAR HACKATHON (Nov 1–14, 2026). Tracks: `defi`, `agents`, `business`, `swarms`.
+Built for NEAR HACKATHON (Nov 1–14, 2026). Tracks: `defi`, `agents`, `business`, `swarms`, `security`.
 
 **Live app:** https://loca.shashank7-iitd-f71.workers.dev (landing page, market dashboard at `/#/app`, live swarm at `/#/app/swarm`). The swarm runs around the clock on testnet, so the numbers change while you watch.
 
 > Status: hackathon prototype. Testnet and local sandbox only. Score weights are prototype rules, not a validated credit model. Not audited.
+
+## Try it in your browser (1 minute, nothing to install)
+
+| Do | See |
+|---|---|
+| Open the [live app](https://loca.shashank7-iitd-f71.workers.dev) | Value locked, credit originated, loans and repayment rate, read from the market contract; the "Order replay" window replays a real settled loan step by step |
+| Open [Live swarm](https://loca.shashank7-iitd-f71.workers.dev/#/app/swarm) | 16 agents, 14 customers, 7 lenders and 6 vendors; lines pulse as escrows, loans and vendor payments land, and the event stream adds a row every few seconds |
+| Click any agent on the [Market](https://loca.shashank7-iitd-f71.workers.dev/#/app) leaderboard | Its LOCA Score with components and reason codes, its loans and bids, and its function-call key read live from NEAR |
+| Click any order number, then a "tx" link | The order's lifecycle (escrow, bids, loan, delivery, settlement) and the transaction on testnet.nearblocks.io |
+| Open [Credit auctions](https://loca.shashank7-iitd-f71.workers.dev/#/app/market) | Open credit requests with competing bids, and the 16 attacks the market refused, each with its error code and transaction |
+| Open [Pay with any token](https://loca.shashank7-iitd-f71.workers.dev/#/app/pay) | A live NEAR Intents quote to fund an order with ETH, SOL or BTC from another chain |
+| Open [Join the market](https://loca.shashank7-iitd-f71.workers.dev/#/app/join) | Commands for each role, and a prompt and tool definitions for connecting Hermes, OpenClaw or another agent framework |
 
 ## Try it in 5 minutes (no funds, no keys)
 
@@ -16,7 +28,7 @@ Requires Rust (the toolchain is pinned by `rust-toolchain.toml`), [`cargo-near`]
 pnpm install
 pnpm build:contracts        # builds contracts/target/near/{loca,test_token}/*.wasm
 pnpm test:contracts         # 28 Rust unit tests
-pnpm test                   # 10 TypeScript tests (lender strategies, Intents adapter, events)
+pnpm test                   # 12 TypeScript tests (lender strategies, Intents adapter, events)
 pnpm demo:sim               # starts a local NEAR node and runs the full loop
 pnpm intents:quote          # live NEAR Intents dry quotes (no funds, no keys)
 pnpm web:dev                # app at http://localhost:5173 (Vite picks the next port if taken)
@@ -90,10 +102,10 @@ escrow   ──waterfall──▶ lender principal + fee │ bond covers shortfa
 
 - **Contract** ([contracts/loca](contracts/loca/src/lib.rs)): agent identity and operator spend policy, order escrow, lender offers, loans, repayment waterfall, disputes (arbiter), kill switch, LOCA Score view.
 - **Score** ([score.rs](contracts/loca/src/score.rs)): `get_score(agent_id)` returns a 0–1000 score, components, weights and reason codes, computed only from onchain history.
-- **Lender agents** ([lenders.ts](src/agents/lenders.ts)): escrow-coverage, repayment-history and concentration-aware strategies. Deterministic, with the rationale logged.
+- **Lender agents** ([lenders.ts](src/agents/lenders.ts)): escrow-coverage, repayment-history and concentration-aware strategies. Each prices in the agent's default rate, so unreliable agents pay more and eventually get no bids. Deterministic, with the rationale logged. The swarm's seven lenders run these three strategies with their own spreads ([cast.ts](src/swarm/cast.ts)).
 - **Intents adapter** ([oneclick.ts](src/intents/oneclick.ts)): asks 1Click for `EXACT_OUTPUT` USDC on NEAR, delivered to the LOCA contract with `customRecipientMsg`. 1Click then calls `ft_transfer_call` and the payment opens the order for the named `customer_id`. The adapter checks minimum received, slippage, deadline and that the message is untouched. Only status `SUCCESS` counts as funded; `REFUNDED` and `FAILED` are handled explicitly. The contract never panics on a deposit that breaks a business rule. It credits the beneficiary instead, so Intents deliveries cannot be stranded.
 - **App** ([web/](web/src/main.ts)): landing page plus a dashboard that polls the market contract every few seconds and rebuilds the event stream from state changes. The Pay page requests live 1Click dry quotes from the browser.
-- **Swarm** ([scripts/swarm.ts](scripts/swarm.ts)): the multi-agent economy described above.
+- **Swarm** ([worker/swarm.ts](worker/swarm.ts), hosted; [scripts/swarm.ts](scripts/swarm.ts) for setup and local runs): the multi-agent economy described above.
 - **Research agent** ([research.ts](src/agents/research.ts)): buys data from the vendor and writes the report, using NEAR AI Cloud when `NEAR_AI_API_KEY` is set and an offline writer otherwise.
 
 ## Guardrails, tested live

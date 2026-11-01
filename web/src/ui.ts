@@ -57,15 +57,15 @@ export const pill = (status: string) => `<span class="pill ${STATUS_CLASS[status
 export const STRATEGY: Record<string, { name: string; policy: string }> = {
   "escrow-coverage": {
     name: "Escrow coverage",
-    policy: "Prices off how many times the escrow covers the advance. Declines below 2× coverage, or an unrated agent with a bond under 20% of principal.",
+    policy: "Prices off how many times the escrow covers the advance, plus the agent's default rate. Declines below 2× coverage, above 15% defaults, or an unrated agent with a bond under 20% of principal.",
   },
   "repayment-history": {
     name: "Repayment history",
-    policy: "Lends only to agents with 3+ completed orders and no defaults. Fee falls as repayment and fulfillment records grow.",
+    policy: "Lends only to agents with 3+ completed orders and defaults under 5% of closed loans. Fee falls as repayment and fulfillment records grow.",
   },
   "concentration-aware": {
     name: "Concentration-aware",
-    policy: "Caps exposure at $60 per agent. Prices off the LOCA Score and adds 2% when one customer dominates revenue.",
+    policy: "Caps exposure at $60 per agent. Prices off the LOCA Score and the default rate, and adds 2% when one customer dominates revenue.",
   },
 };
 export const strategyName = (s: string) => STRATEGY[s]?.name ?? s;

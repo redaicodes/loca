@@ -5,7 +5,7 @@ import "dotenv/config";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Account } from "near-api-js";
+import { type Account, nearToYocto } from "near-api-js";
 import { STRATEGIES, type BidDecision } from "../src/agents/lenders.js";
 import { sha256, vendorDataset, writeReport, type ResearchBrief } from "../src/agents/research.js";
 import { call, chainNowNs, connect, ContractError, EXPLORER, view, type Env, type Network, type TxResult } from "../src/lib/near.js";
@@ -86,9 +86,13 @@ async function main() {
     // ---------- identity ----------
     await call(env.root, LOCA, "add_vendor", { vendor_id: vendor.accountId });
     const profile = { name: "Atlas Research Agent", service: "paid research briefs", version: "1" };
+    // Registration costs 0.01 NEAR of storage; the agent's orders and loans, and each lender's bids,
+    // are paid from storage prepaid here (NEP-145 style).
     await tx("01", "Agent registers LOCA ID", call(agent, LOCA, "register_agent", {
       operator_id: operator.accountId, profile_hash: sha256(JSON.stringify(profile)),
-    }), { agent: agent.accountId, operator: operator.accountId, profile });
+    }, nearToYocto("0.01")), { agent: agent.accountId, operator: operator.accountId, profile });
+    await call(env.root, LOCA, "storage_deposit", { account_id: agent.accountId }, nearToYocto("0.2"));
+    for (const l of lenders) await call(env.root, LOCA, "storage_deposit", { account_id: l.accountId }, nearToYocto("0.05"));
     await tx("01", "Operator sets spend policy (approved vendor, $50 cap)", call(operator, LOCA, "set_spend_policy", {
       agent_id: agent.accountId, allowed_vendors: [vendor.accountId], max_principal: usd(50).toString(),
     }));

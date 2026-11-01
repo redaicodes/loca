@@ -37,6 +37,21 @@ describe("lender strategies", () => {
     expect(repaymentHistory.decide(ctx(700, { s: { loans_defaulted: 1 } })).bid).toBe(false);
   });
 
+  it("repayment-history still lends to a mostly clean record, at a higher fee", () => {
+    const clean = repaymentHistory.decide(ctx(700, { s: { loans_repaid: 40, loans_defaulted: 0, orders_completed: 40 } }));
+    const blemished = repaymentHistory.decide(ctx(700, { s: { loans_repaid: 39, loans_defaulted: 1, orders_completed: 40 } }));
+    expect(clean.bid && blemished.bid).toBe(true);
+    if (clean.bid && blemished.bid) expect(blemished.feeBps).toBeGreaterThan(clean.feeBps);
+  });
+
+  it("escrow-coverage prices in the default rate and stops above 15%", () => {
+    const clean = escrowCoverage.decide(ctx(700, { s: { loans_repaid: 20, loans_defaulted: 0 } }));
+    const risky = escrowCoverage.decide(ctx(700, { s: { loans_repaid: 19, loans_defaulted: 1 } }));
+    expect(clean.bid && risky.bid).toBe(true);
+    if (clean.bid && risky.bid) expect(risky.feeBps - clean.feeBps).toBe(500);
+    expect(escrowCoverage.decide(ctx(700, { s: { loans_repaid: 8, loans_defaulted: 2 } })).bid).toBe(false);
+  });
+
   it("escrow-coverage refuses unrated agents without a bond", () => {
     expect(escrowCoverage.decide(ctx(500, { rated: false, bond: "0" })).bid).toBe(false);
     expect(escrowCoverage.decide(ctx(500, { rated: false, bond: "10000000" })).bid).toBe(true);
