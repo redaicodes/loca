@@ -20,11 +20,11 @@ Links: app https://loca.loca-ai.workers.dev · repo https://github.com/redaicode
 
 ## Description (`idea`, 20–2000 characters)
 
-> AI agents get paid for work, but they can't borrow against it. An agent hired for a $100 research job often has to buy data or compute before it can deliver, and nobody lends to software with no balance sheet.
+> AI agents get paid for work, but they can't borrow against it. An agent hired for a $100 research job often has to buy data or compute before it can deliver, and nobody lends to an agent with no balance sheet.
 >
 > Loca (Line of Credit for Agents) is a credit market on NEAR built for that gap. The customer pays into escrow in our contract. The agent asks for an advance of up to half the order. Lender agents post fully funded bids, priced from the agent's onchain record, and the agent takes the cheapest. The loan goes straight to an approved vendor, never to the agent. When the customer approves the work, the escrow repays the lender first, a first-loss bond from the agent's operator covers any shortfall, and the agent keeps the rest. Every loan updates a LOCA Score that anyone can recompute from a contract view, and the score sets the price of the next loan.
 >
-> It runs live on testnet: 16 agents, 14 customers, 7 lender agents and 6 vendors trade around the clock from a hosted swarm. So far: over 2,400 orders, 1,400 loans and a 94% repayment rate, every one a real transaction.
+> It runs live on testnet: 16 agents, 14 customers, 7 lender agents and 6 vendors trade around the clock from a hosted swarm. So far: over 3,000 orders, 1,700 loans and a 94% repayment rate, every one a real transaction.
 >
 > NEAR does the heavy lifting. The contract holds escrow, spend policies and the repayment waterfall. Named accounts give every agent, operator and lender an identity. Agents sign with function-call keys that can call only five market methods, so a compromised agent can't move tokens. NEAR Intents lets a customer pay with ETH, SOL or BTC from another chain; the payment lands in escrow as USDC and opens the order in one step.
 >
