@@ -31,14 +31,14 @@ def env_key(name):
     return None
 
 def elevenlabs(cfg, i, out_mp3):
-    """One line through ElevenLabs, with its neighbours as context so the read flows. Cached by content."""
+    """One line through ElevenLabs, generated on its own. Cached by content."""
     el = cfg["elevenlabs"]
     lines = cfg["lines"]
     body = {
         "text": lines[i]["text"], "model_id": el["model"], "voice_settings": el["settings"],
-        "previous_text": " ".join(l["text"] for l in lines[max(0, i - 2):i]),
-        "next_text": " ".join(l["text"] for l in lines[i + 1:i + 3]),
     }
+    # No previous_text/next_text: with them, ElevenLabs sometimes starts voicing the neighbouring line,
+    # which leaves a clipped syllable at the end of the clip.
     digest = hashlib.sha256(json.dumps([el["voice_id"], body], sort_keys=True).encode()).hexdigest()[:16]
     cached = os.path.join(OUT, "el", f"{digest}.mp3")
     if not os.path.exists(cached):
