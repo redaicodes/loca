@@ -5,7 +5,7 @@
 Writes runs/launch/{vo.wav,music.wav} and web/video/timeline.json (scene timing for the stage page).
 Each line's spoken length sets when the next scene starts, so a different voice re-times the video.
 """
-import json, os, subprocess, sys, wave
+import hashlib, json, os, subprocess, sys, urllib.request, wave
 import numpy as np
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
@@ -18,13 +18,50 @@ def read_wav(path):
         a = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
     return a
 
+def env_key(name):
+    """From the environment, else from the repo's .env (gitignored). Never printed."""
+    if os.environ.get(name):
+        return os.environ[name]
+    try:
+        for line in open(os.path.join(ROOT, ".env")):
+            if line.startswith(name + "="):
+                return line.split("=", 1)[1].strip()
+    except FileNotFoundError:
+        pass
+    return None
+
+def elevenlabs(cfg, i, out_mp3):
+    """One line through ElevenLabs, with its neighbours as context so the read flows. Cached by content."""
+    el = cfg["elevenlabs"]
+    lines = cfg["lines"]
+    body = {
+        "text": lines[i]["text"], "model_id": el["model"], "voice_settings": el["settings"],
+        "previous_text": " ".join(l["text"] for l in lines[max(0, i - 2):i]),
+        "next_text": " ".join(l["text"] for l in lines[i + 1:i + 3]),
+    }
+    digest = hashlib.sha256(json.dumps([el["voice_id"], body], sort_keys=True).encode()).hexdigest()[:16]
+    cached = os.path.join(OUT, "el", f"{digest}.mp3")
+    if not os.path.exists(cached):
+        key = env_key("ELEVENLABS_API_KEY")
+        req = urllib.request.Request(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{el['voice_id']}?output_format=mp3_44100_128",
+            data=json.dumps(body).encode(), headers={"xi-api-key": key, "Content-Type": "application/json"})
+        os.makedirs(os.path.dirname(cached), exist_ok=True)
+        with urllib.request.urlopen(req, timeout=60) as r, open(cached, "wb") as f:
+            f.write(r.read())
+    subprocess.run(["cp", cached, out_mp3], check=True)
+
 def voiceover(cfg, voice):
     os.makedirs(os.path.join(OUT, "lines"), exist_ok=True)
+    use_el = voice == "elevenlabs"
     t, parts, timeline = LEAD, [], []
     for i, line in enumerate(cfg["lines"]):
-        aiff = os.path.join(OUT, "lines", f"{i:02d}.aiff")
-        wav = aiff.replace(".aiff", ".wav")
-        subprocess.run(["say", "-v", voice, "-r", str(cfg["rate"]), "-o", aiff, line["text"]], check=True)
+        aiff = os.path.join(OUT, "lines", f"{i:02d}.{'mp3' if use_el else 'aiff'}")
+        wav = os.path.join(OUT, "lines", f"{i:02d}.wav")
+        if use_el:
+            elevenlabs(cfg, i, aiff)
+        else:
+            subprocess.run(["say", "-v", voice, "-r", str(cfg["rate"]), "-o", aiff, line["text"]], check=True)
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", aiff, "-ac", "1", "-ar", str(SR),
                         "-af", "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse",
                         "-sample_fmt", "s16", wav], check=True)

@@ -1,6 +1,17 @@
 {
-  "voice": "Daniel",
+  "voice": "elevenlabs",
   "rate": 174,
+  "elevenlabs": {
+    "voice_id": "nPczCjzI2devNBz1zQrb",
+    "voice_name": "Brian",
+    "model": "eleven_multilingual_v2",
+    "settings": {
+      "stability": 0.45,
+      "similarity_boost": 0.8,
+      "style": 0.25,
+      "use_speaker_boost": true
+    }
+  },
   "lines": [
     {
       "id": "hook",
