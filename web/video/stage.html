@@ -16,17 +16,19 @@
 html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); color: var(--ink); font-family: var(--g); }
 .layer { position: absolute; inset: 0; pointer-events: none; }
 
-/* sky: the landing page's gradient, drifting */
-#sky { transition: opacity 1.2s ease; }
-#sky i { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .85; animation: drift 18s ease-in-out infinite alternate; }
-#sky i:nth-child(1) { width: 900px; height: 700px; left: -200px; top: -200px; background: #c7b6f3; }
-#sky i:nth-child(2) { width: 1000px; height: 760px; left: 520px; top: -380px; background: #8fb0f0; animation-duration: 22s; }
-#sky i:nth-child(3) { width: 760px; height: 620px; right: -220px; top: -160px; background: var(--b); opacity: .7; animation-duration: 16s; }
-#sky i:nth-child(4) { width: 820px; height: 600px; left: 240px; bottom: -380px; background: rgba(245,192,143,.75); animation-duration: 20s; }
-#sky::after { content: ""; position: absolute; inset: 0; opacity: .5; mix-blend-mode: overlay;
+/* sky: the landing page's gradient, drifting. Gradients (not blur filters) on layers that only move,
+   a static grain layer, and a white veil for dimming, so the compositor never re-rasterises them. */
+#sky { overflow: hidden; }
+#sky i { position: absolute; width: 1600px; height: 1300px; border-radius: 50%; will-change: transform; animation: drift 18s ease-in-out infinite alternate; }
+#sky i:nth-child(1) { left: -700px; top: -650px; background: radial-gradient(closest-side, rgba(199,182,243,.95), rgba(199,182,243,0)); }
+#sky i:nth-child(2) { left: 160px; top: -820px; background: radial-gradient(closest-side, rgba(143,176,240,.95), rgba(143,176,240,0)); animation-duration: 22s; }
+#sky i:nth-child(3) { right: -720px; top: -620px; background: radial-gradient(closest-side, rgba(245,192,143,.8), rgba(245,192,143,0)); animation-duration: 16s; }
+#sky i:nth-child(4) { left: -160px; bottom: -900px; background: radial-gradient(closest-side, rgba(245,192,143,.75), rgba(245,192,143,0)); animation-duration: 20s; }
+#grain { opacity: .07; will-change: transform;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.15' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
-@keyframes drift { to { transform: translate(120px, 60px) scale(1.12); } }
-#sky.dim { opacity: .45; }
+@keyframes drift { to { transform: translate3d(120px, 60px, 0) scale(1.12); } }
+#veil { background: var(--paper); opacity: 0; transition: opacity 1.2s ease; will-change: opacity; }
+#veil.on { opacity: .55; }
 
 /* kinetic headline */
 #type { display: grid; place-items: center; }
@@ -64,7 +66,7 @@ html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; backgro
   opacity: 0; transform: translateY(10px) scale(.9); transform-origin: 0 100%; transition: opacity .35s ease, transform .5s var(--ease); z-index: 5; }
 .bubble::after { content: ""; position: absolute; left: 22px; bottom: -14px; border: 8px solid transparent; border-top-color: var(--ink); border-left-color: var(--ink); }
 .bubble.in { opacity: 1; transform: none; }
-.chip { position: absolute; z-index: 6; background: var(--b); color: var(--ink); border: 3px solid var(--ink); box-shadow: 5px 5px 0 var(--ink);
+.chip { will-change: left, top, transform, opacity; position: absolute; z-index: 6; background: var(--b); color: var(--ink); border: 3px solid var(--ink); box-shadow: 5px 5px 0 var(--ink);
   font: 600 36px/1 var(--g); letter-spacing: -0.03em; padding: 10px 16px 8px; transform: translate(-50%, -50%) scale(.6); opacity: 0;
   transition: left 1.15s cubic-bezier(.55,0,.25,1), top 1.15s cubic-bezier(.55,0,.25,1), transform .35s var(--ease), opacity .3s ease; }
 .chip.in { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -83,9 +85,8 @@ html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; backgro
 .src span { font: 28px var(--px); color: var(--mute); }
 .src.in { opacity: 1; transform: none; }
 .wire { position: absolute; left: 0; top: 0; width: 1500px; height: 700px; overflow: visible; }
-.wire path { fill: none; stroke: var(--deep); stroke-width: 4; stroke-dasharray: 14 10; stroke-dashoffset: 400; opacity: 0; transition: opacity .4s ease; }
-.wire path.in { opacity: 1; animation: flow 2.2s linear infinite; }
-@keyframes flow { to { stroke-dashoffset: 0; } }
+.wire path { fill: none; stroke: var(--deep); stroke-width: 4; stroke-dasharray: 700; stroke-dashoffset: 700; transition: stroke-dashoffset 1s var(--ease); }
+.wire path.in { stroke-dashoffset: 0; }
 .row { display: flex; justify-content: space-between; align-items: center; font: 30px var(--px); padding: 8px 0; border-top: 1px dashed #aaa;
   opacity: 0; transform: translateX(16px); transition: opacity .35s ease, transform .5s var(--ease); }
 .row.in { opacity: 1; transform: none; }
@@ -139,6 +140,8 @@ html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; backgro
 </head>
 <body>
 <div id="sky" class="layer"><i></i><i></i><i></i><i></i></div>
+<div id="grain" class="layer"></div>
+<div id="veil" class="layer"></div>
 <div id="board" class="layer"></div>
 <div id="type" class="layer"><h1></h1></div>
 <div id="logo" class="layer"></div>
@@ -245,7 +248,7 @@ const SCENES = {
   // The worked example: one order from start to finish.
   meet: async () => {
     $("#logo").classList.add("out");
-    $("#sky").classList.add("dim");
+    $("#veil").classList.add("on");
     sub("Meet Atlas, a research agent.");
     await sleep(500);
     B.agent = win("Agent", `<b>Atlas</b><span>research agent · atlas.near</span><span>Credit score <span id="score" style="color:var(--deep)">720</span></span>`, 740, 690, 440);
@@ -313,10 +316,10 @@ const SCENES = {
   },
 
   // NEAR
-  near: async () => { sub(""); await clearBoard(); $("#sky").classList.remove("dim"); headline("None of this works<br>without <em>NEAR.</em>", "mid"); },
+  near: async () => { sub(""); await clearBoard(); $("#veil").classList.remove("on"); headline("None of this works<br>without <em>NEAR.</em>", "mid"); },
   intents: async (l) => {
     await clearHeadline();
-    $("#sky").classList.add("dim");
+    $("#veil").classList.add("on");
     sub("With NEAR Intents, customers pay with any asset, from any chain. It lands in escrow as dollars.");
     const P = el(`<div class="ptitle"><span class="near">NEAR Intents</span>Pay from any chain</div>
       <svg class="wire" viewBox="0 0 1500 700">${[0, 1, 2, 3].map((i) => `<path d="M400 ${190 + i * 128} C 700 ${190 + i * 128}, 760 400, 1040 400"/>`).join("")}</svg>`, "panel");
@@ -365,12 +368,12 @@ const SCENES = {
   live: async () => {
     sub("");
     await clearBoard();
-    $("#sky").classList.remove("dim");
+    $("#veil").classList.remove("on");
     headline("Live on <em>NEAR</em> testnet,<br>today.", "mid");
   },
   vision: async () => {
     sub("");
-    $("#sky").classList.remove("dim");
+    $("#veil").classList.remove("on");
     headline("Credit built the human economy.<br><em>Now it can build the agent economy.</em>", "mid");
   },
   end: async () => {

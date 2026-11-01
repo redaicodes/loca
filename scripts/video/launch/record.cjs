@@ -1,5 +1,7 @@
-// Records the launch video: opens web/video/stage.html on the dev server, captures the screen through
-// the Chrome DevTools screencast, then encodes it with the voiceover and music from audio.py.
+// Renders the launch video frame by frame: the stage page (web/video/stage.html) runs on a virtual clock
+// that this script advances by exactly 1/30 s per frame (timers, requestAnimationFrame, Date, and every
+// CSS animation and transition), and each frame is captured. No dropped frames, and the voiceover from
+// audio.py lines up exactly because scene timing and frame timing share the same clock.
 //   python3 scripts/video/launch/audio.py && pnpm web:dev   (then, in another shell)
 //   CH=<chromium path> node scripts/video/launch/record.cjs   -> runs/launch/loca-launch.mp4
 const { chromium } = require('playwright-core'); // pnpm add -D playwright-core
@@ -10,6 +12,44 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '../../..');
 const OUT = path.join(ROOT, 'runs/launch');
 const STAGE = process.env.STAGE || 'http://localhost:5180/video/stage.html';
+const FPS = 30;
+
+// Installed before the page's own scripts: replaces the page's notion of time with a clock we step.
+const VIRTUAL_TIME = () => {
+  let vt = 0, nextId = 1;
+  const timers = [], rafs = [], vstart = new WeakMap();
+  const epoch = Date.now();
+  window.setTimeout = (fn, ms = 0, ...a) => { const id = nextId++; timers.push({ id, at: vt + Math.max(0, ms), fn: () => fn(...a) }); return id; };
+  window.clearTimeout = (id) => { const i = timers.findIndex((t) => t.id === id); if (i >= 0) timers.splice(i, 1); };
+  window.setInterval = (fn, ms = 0) => { const id = nextId++; const tick = () => { fn(); timers.push({ id, at: vt + ms, fn: tick }); }; timers.push({ id, at: vt + ms, fn: tick }); return id; };
+  window.clearInterval = window.clearTimeout;
+  window.requestAnimationFrame = (fn) => { const id = nextId++; rafs.push({ id, fn }); return id; };
+  window.cancelAnimationFrame = (id) => { const i = rafs.findIndex((r) => r.id === id); if (i >= 0) rafs.splice(i, 1); };
+  performance.now = () => vt;
+  Date.now = () => epoch + vt;
+  window.__advance = (ms) => {
+    const target = vt + ms;
+    for (;;) {
+      timers.sort((a, b) => a.at - b.at);
+      const t = timers[0];
+      if (!t || t.at > target) break;
+      timers.shift(); vt = t.at;
+      try { t.fn(); } catch (e) { console.error(e); }
+    }
+    vt = target;
+    for (const r of rafs.splice(0)) { try { r.fn(vt); } catch (e) { console.error(e); } }
+  };
+  // After the page's callbacks (and their promise continuations) have run: pin every animation to the clock.
+  window.__pin = () => {
+    for (const a of document.getAnimations()) {
+      if (!vstart.has(a)) vstart.set(a, vt);
+      const local = vt - vstart.get(a);
+      const end = a.effect?.getComputedTiming().endTime;
+      if (Number.isFinite(end) && local >= end) { a.finish(); continue; }
+      a.pause(); a.currentTime = local;
+    }
+  };
+};
 
 (async () => {
   fs.rmSync(path.join(OUT, 'frames'), { recursive: true, force: true });
@@ -17,53 +57,26 @@ const STAGE = process.env.STAGE || 'http://localhost:5180/video/stage.html';
   const browser = await chromium.launch({ executablePath: process.env.CH });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   page.on('pageerror', (e) => console.error('page error:', e.message));
+  page.on('console', (m) => m.type() === 'error' && console.error('console:', m.text()));
+  await page.addInitScript(VIRTUAL_TIME);
   await page.goto(STAGE);
-  console.log('preparing…');
-  await page.evaluate(() => window.prepare(), null, { timeout: 600000 });
-  await page.waitForTimeout(1500);
-
+  await page.evaluate(() => window.prepare());
+  const total = await page.evaluate(() => window.start());
   const cdp = await page.context().newCDPSession(page);
-  const frames = [];
-  cdp.on('Page.screencastFrame', ({ data, metadata, sessionId }) => {
-    frames.push({ t: Date.now() / 1000, data }); // arrival time, on the same clock as the page's scene log
-    cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
-  });
-  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 93, maxWidth: 1920, maxHeight: 1080 });
-  await page.waitForTimeout(800);
-  const planned = await page.evaluate(() => window.start());
-  console.log(`recording ~${planned}s`);
-  await page.waitForTimeout(planned * 1000 + 3000);
-  await cdp.send('Page.stopScreencast');
-  const { t0ms, log } = await page.evaluate(() => ({ t0ms: window.__t0, log: window.__log }));
+  const n = Math.ceil(total * FPS);
+  console.log(`rendering ${n} frames (${total}s at ${FPS} fps)`);
+  for (let i = 0; i < n; i++) {
+    await page.evaluate((ms) => window.__advance(ms), i === 0 ? 0 : 1000 / FPS);
+    await page.evaluate(() => window.__pin());
+    const { data } = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 94, optimizeForSpeed: true });
+    fs.writeFileSync(path.join(OUT, 'frames', `f${String(i).padStart(5, '0')}.jpg`), Buffer.from(data, 'base64'));
+    if (i % 300 === 0) console.log(`  ${(i / FPS).toFixed(0)}s`);
+  }
   await browser.close();
-  const t0 = t0ms / 1000;
-  // The video runs from the start call to the last scene's start plus the planned tail.
-  const timeline = JSON.parse(fs.readFileSync(path.join(ROOT, 'web/video/timeline.json'), 'utf8'));
-  const lastLine = timeline.lines.at(-1), lastScene = log.find((x) => x.id === lastLine.id);
-  const total = (lastScene.at / 1000 - t0) + 0.25 + (planned - lastLine.start);
-  const scenes = log.map((x) => ({ id: x.id, t: x.at / 1000 - t0 }));
-  scenes.forEach((x) => { const l = timeline.lines.find((y) => y.id === x.id); console.log(`  ${x.id.padEnd(9)} planned ${(l.start - 0.25).toFixed(2)}  actual ${x.t.toFixed(2)}`); });
-  fs.writeFileSync(path.join(OUT, 'offsets.json'), JSON.stringify({ total, scenes }, null, 1));
-  execFileSync('python3', [path.join(__dirname, 'audio.py'), 'place', path.join(OUT, 'offsets.json')], { stdio: 'inherit' });
-
-  // Frames from t0 on; the last frame before t0 stands in for time zero.
-  const before = frames.filter((f) => f.t < t0).at(-1);
-  const use = [...(before ? [{ ...before, t: t0 }] : []), ...frames.filter((f) => f.t >= t0)];
-  const list = ['ffconcat version 1.0'];
-  use.forEach((f, i) => {
-    const name = `f${String(i).padStart(5, '0')}.jpg`;
-    fs.writeFileSync(path.join(OUT, 'frames', name), Buffer.from(f.data, 'base64'));
-    const next = i + 1 < use.length ? use[i + 1].t : t0 + total;
-    list.push(`file 'frames/${name}'`, `duration ${Math.max(0.001, next - f.t).toFixed(4)}`);
-  });
-  list.push(`file 'frames/f${String(use.length - 1).padStart(5, '0')}.jpg'`);
-  fs.writeFileSync(path.join(OUT, 'list.ffconcat'), list.join('\n'));
-  console.log(`${use.length} frames`);
 
   const ff = (args) => execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...args], { cwd: OUT, stdio: 'inherit' });
-  ff(['-f', 'concat', '-safe', '0', '-i', 'list.ffconcat', '-t', String(total),
-    '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', 'video.mp4']);
-  // Music ducks under the voice.
+  ff(['-framerate', String(FPS), '-i', 'frames/f%05d.jpg', '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', 'video.mp4']);
+  // Voice on top; music ducks under it; loudness normalised for social video.
   ff(['-i', 'video.mp4', '-i', 'vo.wav', '-i', 'music.wav', '-filter_complex',
     '[1:a]asplit=2[vo][key];[2:a]volume=0.5[m];[m][key]sidechaincompress=threshold=0.02:ratio=6:attack=30:release=500[md];' +
     '[vo]volume=1.6,highpass=f=80,acompressor=threshold=0.1:ratio=3[v];[md][v]amix=inputs=2:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_rates=48000:channel_layouts=stereo[a]',
