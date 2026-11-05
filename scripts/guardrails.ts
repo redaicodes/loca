@@ -3,7 +3,8 @@
 //   pnpm guardrails
 //
 // Uses its own accounts under SWARM_ACCOUNT_ID (join-agent, join-op, join-cust, join-lender,
-// guard-nostore), so the swarm's agents are not disturbed. Two layers are tested:
+// guard-nostore), each with its own key derived from SWARM_SEED, so the swarm's agents are not
+// disturbed. Two layers are tested:
 //   contract  the Loca contract refuses (a failed receipt, or a deposit credited back)
 //   runtime   NEAR refuses before the contract runs (the agent's function-call key)
 
@@ -13,11 +14,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPair, type KeyPairString, nearToYocto } from "near-api-js";
 import { call, ContractError, type TxResult } from "../src/lib/near.js";
+import { deriveKey } from "../src/swarm/keys.js";
 import { usd } from "../src/lib/types.js";
 
 const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = process.env.SWARM_ACCOUNT_ID!;
-const SUB = process.env.SWARM_SUBKEY as KeyPairString;
+const TEST = ["join-agent", "join-op", "join-cust", "join-lender", "join-lender2", "guard-nostore"];
+const KEYS = new Map(await Promise.all(TEST.map(async (s) => [s, await deriveKey(process.env.SWARM_SEED!, `${s}.${ROOT}`)] as const)));
 const MARKET = `market.${ROOT}`;
 const USDC = `usdc.${ROOT}`;
 const DATAHUB = `datahub.${ROOT}`;
@@ -28,7 +31,7 @@ const provider = new FailoverRpcProvider(
   ["https://rpc.testnet.fastnear.com", "https://near-testnet.drpc.org", "https://test.rpc.fastnear.com"]
     .map((url) => new JsonRpcProvider({ url }, { retries: 4, wait: 800, backoff: 1.7 })),
 );
-const acct = (slug: string, key: string = SUB) => new Account(`${slug}.${ROOT}`, provider, key as KeyPairString);
+const acct = (slug: string, key: string = KEYS.get(slug)!) => new Account(`${slug}.${ROOT}`, provider, key as KeyPairString);
 const root = new Account(ROOT, provider, process.env.SWARM_PRIVATE_KEY as KeyPairString);
 const view = <T>(method: string, args: Record<string, unknown> = {}, contract = MARKET) =>
   provider.callFunction({ contractId: contract, method, args }) as Promise<T>;
@@ -51,7 +54,7 @@ async function attempt(title: string, actor: string, desc: string, layer: Layer,
       const m = String((e as Error).message ?? e);
       // NEAR rejects these before execution, so there is no transaction; keep the error's name.
       const name = (e as Error).constructor?.name ?? "";
-      got = `${name} ${m}`.match(/MethodNameMismatch|ReceiverMismatch|DepositWithFunctionCall|NotEnoughAllowance|ERR_[A-Z_]+/)?.[0] ?? `${name}: ${m}`.slice(0, 120);
+      got = `${name} ${m}`.match(/MethodNameMismatch|ReceiverMismatch|DepositWithFunctionCall|NotEnoughAllowance|RequiresFullAccess|ERR_[A-Z_]+/)?.[0] ?? `${name}: ${m}`.slice(0, 120);
     }
   }
   const passed = got === expected;
@@ -68,11 +71,14 @@ async function main() {
 
   // ---------- setup (not recorded) ----------
   for (const slug of ["guard-nostore", "join-lender2"]) {
-    await root.createSubAccount({ accountOrPrefix: slug, publicKey: KeyPair.fromString(SUB).getPublicKey().toString(), nearToTransfer: nearToYocto("0.5") }).catch(() => {});
+    await root.createSubAccount({ accountOrPrefix: slug, publicKey: KeyPair.fromString(KEYS.get(slug) as KeyPairString).getPublicKey().toString(), nearToTransfer: nearToYocto("0.5") }).catch(() => {});
   }
   const lender2 = acct("join-lender2");
   await call(root, USDC, "register", { account_ids: [lender2.accountId, `guard-nostore.${ROOT}`] });
   for (const a of [cust, lender, lender2, op]) await call(root, USDC, "mint", { account_id: a.accountId, amount: usd(500).toString() });
+  if (BigInt((await view<{ bond: string } | null>("get_agent", { agent_id: agentFull.accountId }))?.bond ?? "0") < usd(10)) {
+    await ft(op, usd(10), { PostBond: { agent_id: agentFull.accountId } });
+  }
   await call(op, MARKET, "storage_deposit", { account_id: agentFull.accountId }, nearToYocto("0.1"));
   for (const l of [lender, lender2]) {
     if (BigInt(await view<string>("storage_balance_of", { account_id: l.accountId })) > 0n) {
@@ -115,6 +121,14 @@ async function main() {
   await call(op, MARKET, "set_spend_policy", { agent_id: agentFull.accountId, allowed_vendors: [DATAHUB], max_principal: usd(50).toString() });
   await call(agent, MARKET, "request_credit", { order_id: orderId, amount: usd(30).toString(), vendor_id: DATAHUB, max_fee: usd(3).toString(), expires_at: reqExpiry() }, 0n, 30_000_000_000_000n);
 
+  // ---------- the first-loss bond ----------
+  await attempt("Agent takes its operator's bond", "agent account", "withdraw the bond its operator posted, to itself", "contract", "ERR_NOT_OPERATOR",
+    () => call(agentFull, MARKET, "withdraw_bond", { agent_id: agentFull.accountId, amount: usd(5).toString() }));
+  await attempt("Bond pulled while lenders are bidding", "operator", "withdraw the bond after lenders priced their bids on it, before a loan exists", "contract", "ERR_BOND_LOCKED",
+    () => call(op, MARKET, "withdraw_bond", { agent_id: agentFull.accountId, amount: usd(5).toString() }));
+  await attempt("Stranger plants a bond", "customer", "post a bond for an agent it does not operate, to inflate its credit", "contract", "ERR_NOT_OPERATOR",
+    () => ft(cust, usd(5), { PostBond: { agent_id: agentFull.accountId } }));
+
   // ---------- who may lend ----------
   const offerExp = () => (now() + 300n * SEC).toString();
   await attempt("Customer lends against its own order", "customer", "bid on the order it paid for", "contract", "ERR_LENDER_RELATED_PARTY",
@@ -130,8 +144,12 @@ async function main() {
   await call(agent, MARKET, "accept_offer", { offer_id: offerId }, 0n, 30_000_000_000_000n);
   await attempt("Second loan on the same order", "lender", "lend against an order that already backs a loan", "contract", "ERR_ORDER_ALREADY_PLEDGED",
     () => ft(lender2, usd(30), { MakeOffer: { order_id: orderId, fee: usd(1).toString(), expires_at: offerExp(), strategy: "x" } }));
-  await attempt("Bond pulled during a loan", "agent account", "withdraw the first-loss bond while a loan is open", "contract", "ERR_ACTIVE_LOANS",
-    () => call(agentFull, MARKET, "withdraw_bond", { amount: usd(5).toString() }));
+  await attempt("Bond pulled during a loan", "operator", "withdraw the first-loss bond while a loan is open", "contract", "ERR_ACTIVE_LOANS",
+    () => call(op, MARKET, "withdraw_bond", { agent_id: agentFull.accountId, amount: usd(5).toString() }));
+  await attempt("Lender cancels a rival's bid", "lender", "withdraw another lender's offer", "contract", "ERR_NOT_LENDER",
+    () => call(lender2, MARKET, "withdraw_offer", { offer_id: offerId }));
+  await attempt("Storage withdrawn twice", "lender", "withdraw more prepaid storage NEAR than it deposited", "contract", "ERR_STORAGE_AMOUNT",
+    () => call(lender2, MARKET, "storage_withdraw", { amount: nearToYocto("10").toString() }));
 
   // ---------- settlement ----------
   await attempt("Customer cancels before the deadline", "customer", "take the escrow back while the agent is still working", "contract", "ERR_BEFORE_DEADLINE",
@@ -139,6 +157,10 @@ async function main() {
   await call(agent, MARKET, "mark_delivered", { order_id: orderId, deliverable_hash: "guardrail-report" }, 0n, 30_000_000_000_000n);
   await attempt("Early release", "anyone", "release the escrow before the customer's dispute window closes", "contract", "ERR_DISPUTE_WINDOW_OPEN",
     () => call(root, MARKET, "finalize", { order_id: orderId }));
+  await attempt("Lender approves the work", "lender", "approve delivery in the customer's place to get repaid sooner", "contract", "ERR_NOT_CUSTOMER",
+    () => call(lender, MARKET, "approve", { order_id: orderId }));
+  await attempt("Customer plays arbiter", "customer", "rule on its own dispute and refund itself", "contract", "ERR_NOT_ARBITER",
+    () => call(cust, MARKET, "resolve_dispute", { order_id: orderId, refund_bps: 10_000 }));
 
   // ---------- the agent's own key ----------
   await attempt("Agent key moves tokens", "agent key", "transfer USDC straight out of the agent's wallet", "runtime", "ReceiverMismatch",
@@ -147,6 +169,10 @@ async function main() {
     () => call(agentDirect, MARKET, "add_vendor", { vendor_id: op.accountId }, 0n, 30_000_000_000_000n));
   await attempt("Agent key attaches money", "agent key", "attach NEAR to a call", "runtime", "DepositWithFunctionCall",
     () => call(agentDirect, MARKET, "request_credit", { order_id: orderId, amount: "1", vendor_id: DATAHUB, max_fee: "1", expires_at: reqExpiry() }, 1n, 30_000_000_000_000n));
+  await attempt("Agent key pulls the bond", "agent key", "call withdraw_bond with the agent's own key", "runtime", "MethodNameMismatch",
+    () => call(agentDirect, MARKET, "withdraw_bond", { agent_id: agentFull.accountId, amount: "1" }, 0n, 30_000_000_000_000n));
+  await attempt("Agent key grants itself full access", "agent key", "add a full-access key to the agent account", "runtime", "RequiresFullAccess",
+    async () => { await agentDirect.addFullAccessKey(KeyPair.fromRandom("ed25519").getPublicKey()); return { hash: "", value: null, events: [], logs: [] }; });
 
   await call(cust, MARKET, "approve", { order_id: orderId });
   await agentFull.deleteKey(kp.getPublicKey().toString()).catch(() => {});

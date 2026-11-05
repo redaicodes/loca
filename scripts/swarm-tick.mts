@@ -1,14 +1,12 @@
 // Run the hosted swarm's tick locally against testnet: `npx tsx scripts/swarm-tick.mts [ticks]`.
-// Uses the same keys the worker gets as secrets (.env and runs/agent-keys.json).
+// Uses the same secrets the worker gets (SWARM_PRIVATE_KEY and SWARM_SEED from .env).
 import "dotenv/config";
-import { readFileSync } from "node:fs";
 import { tick } from "../worker/swarm.js";
 
 const env = {
   SWARM_ACCOUNT_ID: process.env.SWARM_ACCOUNT_ID!,
   SWARM_PRIVATE_KEY: process.env.SWARM_PRIVATE_KEY!,
-  SWARM_SUBKEY: process.env.SWARM_SUBKEY!,
-  AGENT_KEYS: readFileSync("runs/agent-keys.json", "utf8"),
+  SWARM_SEED: process.env.SWARM_SEED!,
   PACE: process.env.PACE ?? "2",
 };
 const n = Number(process.argv[2] ?? 1);

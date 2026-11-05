@@ -1,5 +1,7 @@
 # Hosted agent swarm: a scheduled Worker that advances the testnet market every minute.
-# Secrets (set with `wrangler secret put`, never committed): SWARM_PRIVATE_KEY, SWARM_SUBKEY, AGENT_KEYS.
+# Secrets (set with `wrangler secret put`, never committed): SWARM_PRIVATE_KEY (the root's key) and
+# SWARM_SEED (derives every participant's own key; see src/swarm/keys.ts). The worker holds no key for the
+# market contract or the token.
 name = "loca-swarm"
 main = "worker/swarm.ts"
 compatibility_date = "2026-10-01"

@@ -215,6 +215,9 @@ pub struct MarketView {
     pub next_order_id: u64,
     pub next_offer_id: u64,
     pub next_loan_id: u64,
+    /// Orders below this id have been considered for pruning; settled ones are gone from state.
+    pub prune_cursor: u64,
+    pub orders_pruned: u64,
     pub block_timestamp: U64,
 }
 

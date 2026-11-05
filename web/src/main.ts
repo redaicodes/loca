@@ -9,6 +9,7 @@ import { activity, agentDetail, agents, dashboard, lenders, market, orderDetail,
 import { mountPay, pay } from "./pay";
 import { joinPage, mountJoin } from "./join";
 import { swarmPage, updateSwarm } from "./swarm-view";
+import { mountTx, txPage } from "./tx";
 import { ICON, LOGO, accountLink, esc, label, tooltips } from "./ui";
 
 const POLL_MS = 8000;
@@ -98,6 +99,14 @@ function route(refresh = false, fresh = new Set<string>()) {
   const same = raw === lastRoute;
   lastRoute = raw;
 
+  // Transactions are read on their own, so a shared tx link opens before the market loads.
+  if (section === "tx" && id) {
+    if (refresh && same) return;
+    view.innerHTML = txPage(id);
+    void mountTx(id);
+    if (!refresh) window.scrollTo(0, 0);
+    return;
+  }
   // The join page needs no market data, so it renders before the store loads.
   if (section === "join") {
     if (refresh && same && view.querySelector(".steps-j")) return; // keep form state and scroll
@@ -151,7 +160,7 @@ async function fillAgentKeys() {
     const near = (y: string | null | undefined) => (y == null ? "unlimited" : `${(Number(BigInt(y) / 10n ** 18n) / 1e6).toFixed(3)} NEAR`);
     const row = (k: KeyInfo) => `<div class="key-row"><span class="pill s-open">function-call</span> <span class="mono small">${esc(k.publicKey.slice(0, 16))}…</span><div class="muted small">only ${esc(k.methods!.join(", "))} on ${esc(label(k.receiver!))} · gas allowance ${near(k.allowance)} · can't attach NEAR or touch tokens</div></div>`;
     const html = `${fc.map(row).join("") || '<div class="muted small">No restricted key: the agent signs with a full-access key.</div>'}
-      <div class="muted small" style="margin-top:6px">${full} full-access key${full === 1 ? "" : "s"}, held by the operator · storage prepaid ${near(storage)}</div>`;
+      <div class="muted small" style="margin-top:6px">${full ? `${full} full-access key${full === 1 ? "" : "s"}, held by the operator` : "No full-access key: nothing the agent holds can move its funds"} · storage prepaid ${near(storage)}</div>`;
     keyCache.set(id, { at: Date.now(), html });
     if (document.body.contains(el)) el.innerHTML = html;
   } catch {

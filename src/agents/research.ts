@@ -55,7 +55,7 @@ export async function writeReport(brief: ResearchBrief, data: Dataset): Promise<
   return { markdown: md, hash: sha256(md), engine: "offline" };
 }
 
-const model = () => process.env.NEAR_AI_MODEL ?? "deepseek-ai/DeepSeek-V3.1";
+const model = () => process.env.NEAR_AI_MODEL ?? "anthropic/claude-haiku-5-5";
 
 async function nearAiReport(key: string, brief: ResearchBrief, data: Dataset): Promise<string> {
   const base = process.env.NEAR_AI_BASE_URL ?? "https://cloud-api.near.ai/v1";

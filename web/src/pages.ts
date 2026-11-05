@@ -1,5 +1,5 @@
 import { CAST, CONTRACT, GUARDRAILS, type FeedItem, type Loan, type Offer, type Order, type ScoreReport, type Store } from "./data";
-import { REASON_TEXT, SCORE_LABELS, STRATEGY, ICON, acct, accountLink, agentService, ago, bps, empty, esc, fmtDate, label, pct, pill, strategyName, txLink, usd } from "./ui";
+import { REASON_TEXT, SCORE_LABELS, STRATEGY, ICON, acct, accountLink, agentService, ago, bps, empty, esc, fmtDate, label, pct, pill, strategyName, strategyNote, txLink, usd } from "./ui";
 
 const enc = encodeURIComponent;
 export const agentHref = (id: string) => `#/app/agents/${enc(id)}`;
@@ -388,7 +388,7 @@ export function orderDetail(s: Store, id: number) {
     </div>
   </div>
   ${offers.length ? card("Offers", `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Offer</th><th>Lender</th><th>Strategy</th><th class="num">Fee</th><th class="num">Rate</th><th>Status</th></tr></thead><tbody>${offers
-    .map((f) => `<tr><td class="mono">#${f.id}</td><td>${esc(label(f.lender_id))}</td><td>${strategyName(f.strategy)}</td><td class="num mono">${usd(f.fee)}</td><td class="num mono">${(bps(f.fee, f.principal) / 100).toFixed(2)}%</td><td>${pill(f.status)}</td></tr>`)
+    .map((f) => `<tr><td class="mono">#${f.id}</td><td>${esc(label(f.lender_id))}</td><td>${strategyName(f.strategy)}${strategyNote(f.strategy) ? `<div class="muted small">${esc(strategyNote(f.strategy))}</div>` : ""}</td><td class="num mono">${usd(f.fee)}</td><td class="num mono">${(bps(f.fee, f.principal) / 100).toFixed(2)}%</td><td>${pill(f.status)}</td></tr>`)
     .join("")}</tbody></table></div>`) : ""}
   ${card("Terms", `<dl class="kv">
       <dt>Terms hash</dt><dd class="mono hash">${esc(o.terms_hash)}</dd>
@@ -452,8 +452,8 @@ export function lenders(s: Store) {
       const mine = [...s.offers.values()].filter((o) => o.lender_id === l.id).sort((a, b) => b.id - a.id).slice(0, 5);
       return `<section class="card span-4"><div class="card-h"><h2>${esc(l.name)}</h2><span class="muted small">${esc(v?.name ?? l.strategy)}</span></div><div class="card-b"><p class="policy">${esc(v?.policy ?? "")}</p>
         <div class="k" style="margin-bottom:6px">Latest bids</div>
-        <div class="mini">${mine.map((o) => `<div><a href="${orderHref(o.order_id)}">#${o.order_id}</a><span class="mono">${usd(o.fee)}</span>${pill(o.status)}</div>`).join("") || '<div class="muted small">No bids yet</div>'}</div></div>
-        <div class="card-f"><code>src/agents/lenders.ts</code></div></section>`;
+        <div class="mini">${mine.map((o) => `<div><a href="${orderHref(o.order_id)}">#${o.order_id}</a><span class="mono">${usd(o.fee)}</span>${pill(o.status)}</div>${strategyNote(o.strategy) ? `<div class="muted small">${esc(strategyNote(o.strategy))}</div>` : ""}`).join("") || '<div class="muted small">No bids yet</div>'}</div></div>
+        <div class="card-f"><code>src/agents/${l.strategy === "ai-underwriter" ? "underwriter" : "lenders"}.ts</code></div></section>`;
     })
     .join("")}</div>`;
 }

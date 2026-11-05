@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-10-31T17:46:33.053Z",
+  "generatedAt": "2026-11-05T17:34:46.820Z",
   "recipient": "intents.near",
   "recipientIsStandIn": true,
-  "escrowMsg": "{\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793472386271000000\",\"customer_id\":\"customer.near\"}}",
+  "escrowMsg": "{\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793903681688000000\",\"customer_id\":\"customer.near\"}}",
   "results": [
     {
       "label": "ETH on Arbitrum",
@@ -11,15 +11,15 @@
         "ok": true,
         "response": {
           "quote": {
-            "amountIn": "44970243692532564",
-            "amountInFormatted": "0.044970243692532564",
-            "amountInUsd": "101.255000698106",
-            "minAmountIn": "44520541255607238",
+            "amountIn": "44901332641327863",
+            "amountInFormatted": "0.044901332641327863",
+            "amountInUsd": "101.143843881202",
+            "minAmountIn": "44452319314914584",
             "amountOut": "100000000",
             "amountOutFormatted": "100.0",
-            "amountOutUsd": "100.000000000000",
+            "amountOutUsd": "99.964200000000",
             "minAmountOut": "100000000",
-            "timeEstimate": 27,
+            "timeEstimate": 25,
             "refundFee": "1200000000000",
             "withdrawFee": "0"
           },
@@ -35,9 +35,9 @@
             "refundTo": "0x2527D02599Ba641c19FEa793cD0F167589a0f10D",
             "refundType": "ORIGIN_CHAIN",
             "recipient": "intents.near",
-            "customRecipientMsg": "{\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793472386271000000\",\"customer_id\":\"customer.near\"}}",
+            "customRecipientMsg": "{\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793903681688000000\",\"customer_id\":\"customer.near\"}}",
             "recipientType": "DESTINATION_CHAIN",
-            "deadline": "2026-10-31T18:16:26.271Z",
+            "deadline": "2026-11-05T18:04:41.689Z",
             "confidentiality": "public",
             "quoteWaitingTimeMs": 0,
             "insured": false,
@@ -48,15 +48,15 @@
               }
             ]
           },
-          "signature": "ed25519:4hPrCzRtqBjyLiNLjzMG5YMLqAS8wJjUsyKUyhCCXzs7meH7vN2n9M3EWkMv2qx6LB83xtk9SpmEPddkvejhTcxN",
-          "timestamp": "2026-10-31T17:46:27.108Z",
-          "correlationId": "1e1ab9da-8aa3-4453-b6ac-4e241ff3b304"
+          "signature": "ed25519:3gXNbf6pkNH8R5hdWgBS3nceTQfm7np2BgBnKPAmPVhHFGcK9k4naeffkpUpPnDCgqrD21kC9DzNEfbesCa4dA3V",
+          "timestamp": "2026-11-05T17:34:41.817Z",
+          "correlationId": "af2d06ab-2e17-4233-8a9f-a2c466480a44"
         },
         "checks": [
           "delivers exactly 100.0 USDC to intents.near",
-          "pay 0.044970243692532564 (~$101.26), at least 44520541255607238 base units",
+          "pay 0.044901332641327863 (~$101.14), at least 44452319314914584 base units",
           "withdraw fee 0 (already included)",
-          "escrow message: {\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793472386271000000\",\"customer_id\":\"customer.near\"}}"
+          "escrow message: {\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793903681688000000\",\"customer_id\":\"customer.near\"}}"
         ]
       }
     },
@@ -67,13 +67,13 @@
         "ok": true,
         "response": {
           "quote": {
-            "amountIn": "101024920",
-            "amountInFormatted": "101.02492",
-            "amountInUsd": "101.024920000000",
-            "minAmountIn": "100014670",
+            "amountIn": "101024352",
+            "amountInFormatted": "101.024352",
+            "amountInUsd": "100.988185281984",
+            "minAmountIn": "100014108",
             "amountOut": "100000000",
             "amountOutFormatted": "100.0",
-            "amountOutUsd": "100.000000000000",
+            "amountOutUsd": "99.964200000000",
             "minAmountOut": "100000000",
             "timeEstimate": 35,
             "refundFee": "2400",
@@ -91,9 +91,9 @@
             "refundTo": "0x2527D02599Ba641c19FEa793cD0F167589a0f10D",
             "refundType": "ORIGIN_CHAIN",
             "recipient": "intents.near",
-            "customRecipientMsg": "{\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793472386271000000\",\"customer_id\":\"customer.near\"}}",
+            "customRecipientMsg": "{\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793903681688000000\",\"customer_id\":\"customer.near\"}}",
             "recipientType": "DESTINATION_CHAIN",
-            "deadline": "2026-10-31T18:16:27.316Z",
+            "deadline": "2026-11-05T18:04:43.456Z",
             "confidentiality": "public",
             "quoteWaitingTimeMs": 0,
             "insured": false,
@@ -104,15 +104,15 @@
               }
             ]
           },
-          "signature": "ed25519:3NaDcvs97cz9GBuHRxp8Phqnx9ZbYaSQMkdqhE87FZp31b61azFx4qUiJhQocxAFP9j6eNGAWZuxU3Kqj1eXopKi",
-          "timestamp": "2026-10-31T17:46:29.252Z",
-          "correlationId": "1f666786-d5e8-4457-86bb-870f4b142826"
+          "signature": "ed25519:2nBKwUeQgDc7TazxDhjP6oTvCPVN8Ddrp9BziWA4vVNC7sUNFA4PuH58pEcS383XQGnafDTTNh7Tp94d2ZbyjLt3",
+          "timestamp": "2026-11-05T17:34:43.822Z",
+          "correlationId": "5f65dc62-1b3b-423e-8b7e-4775e33f467f"
         },
         "checks": [
           "delivers exactly 100.0 USDC to intents.near",
-          "pay 101.02492 (~$101.02), at least 100014670 base units",
+          "pay 101.024352 (~$100.99), at least 100014108 base units",
           "withdraw fee 0 (already included)",
-          "escrow message: {\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793472386271000000\",\"customer_id\":\"customer.near\"}}"
+          "escrow message: {\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793903681688000000\",\"customer_id\":\"customer.near\"}}"
         ]
       }
     },
@@ -123,16 +123,16 @@
         "ok": true,
         "response": {
           "quote": {
-            "amountIn": "1053473724",
-            "amountInFormatted": "1.053473724",
-            "amountInUsd": "101.133477504000",
-            "minAmountIn": "1042938986",
+            "amountIn": "1127617262",
+            "amountInFormatted": "1.127617262",
+            "amountInUsd": "101.068335193060",
+            "minAmountIn": "1116341089",
             "amountOut": "100000000",
             "amountOutFormatted": "100.0",
-            "amountOutUsd": "100.000000000000",
+            "amountOutUsd": "99.964200000000",
             "minAmountOut": "100000000",
             "timeEstimate": 20,
-            "refundFee": "104167",
+            "refundFee": "111271",
             "withdrawFee": "0"
           },
           "quoteRequest": {
@@ -147,9 +147,9 @@
             "refundTo": "13QkxhNMrTPxoCkRdYdJ65tFuwXPhL5gLS2Z5Nr6gjRK",
             "refundType": "ORIGIN_CHAIN",
             "recipient": "intents.near",
-            "customRecipientMsg": "{\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793472386271000000\",\"customer_id\":\"customer.near\"}}",
+            "customRecipientMsg": "{\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793903681688000000\",\"customer_id\":\"customer.near\"}}",
             "recipientType": "DESTINATION_CHAIN",
-            "deadline": "2026-10-31T18:16:29.986Z",
+            "deadline": "2026-11-05T18:04:44.497Z",
             "confidentiality": "public",
             "quoteWaitingTimeMs": 0,
             "insured": false,
@@ -160,15 +160,15 @@
               }
             ]
           },
-          "signature": "ed25519:52WLpkNosGWfvktZU57oF4zreTJe1Hi9R5owDFpXaLYCokL6RHZ4oVke1q1WYC8hCvWHfgXusYvN55VvKpkvk2Yy",
-          "timestamp": "2026-10-31T17:46:30.834Z",
-          "correlationId": "af564f17-c211-4e5a-a3c1-87cd0e9ce1b4"
+          "signature": "ed25519:29LBNT1kstZwxXjJSVQEWjMicvsszLyabRMGjYL1WxWCBteUtTNY2G6VnhqCENUVVbzRDQvJMkMH4QBuh9sZKUvb",
+          "timestamp": "2026-11-05T17:34:44.627Z",
+          "correlationId": "46c3a646-db27-4ae4-9f71-529a336a9310"
         },
         "checks": [
           "delivers exactly 100.0 USDC to intents.near",
-          "pay 1.053473724 (~$101.13), at least 1042938986 base units",
+          "pay 1.127617262 (~$101.07), at least 1116341089 base units",
           "withdraw fee 0 (already included)",
-          "escrow message: {\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793472386271000000\",\"customer_id\":\"customer.near\"}}"
+          "escrow message: {\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793903681688000000\",\"customer_id\":\"customer.near\"}}"
         ]
       }
     },
@@ -179,16 +179,16 @@
         "ok": true,
         "response": {
           "quote": {
-            "amountIn": "130442",
-            "amountInFormatted": "0.00130442",
-            "amountInUsd": "101.105594200000",
-            "minAmountIn": "129137",
+            "amountIn": "133144",
+            "amountInFormatted": "0.00133144",
+            "amountInUsd": "101.077599040000",
+            "minAmountIn": "131812",
             "amountOut": "100000000",
             "amountOutFormatted": "100.0",
-            "amountOutUsd": "100.000000000000",
+            "amountOutUsd": "99.964200000000",
             "minAmountOut": "100000000",
             "timeEstimate": 805,
-            "refundFee": "1900",
+            "refundFee": "2537",
             "withdrawFee": "0"
           },
           "quoteRequest": {
@@ -203,9 +203,9 @@
             "refundTo": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
             "refundType": "ORIGIN_CHAIN",
             "recipient": "intents.near",
-            "customRecipientMsg": "{\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793472386271000000\",\"customer_id\":\"customer.near\"}}",
+            "customRecipientMsg": "{\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793903681688000000\",\"customer_id\":\"customer.near\"}}",
             "recipientType": "DESTINATION_CHAIN",
-            "deadline": "2026-10-31T18:16:30.981Z",
+            "deadline": "2026-11-05T18:04:45.349Z",
             "confidentiality": "public",
             "quoteWaitingTimeMs": 0,
             "insured": false,
@@ -216,15 +216,15 @@
               }
             ]
           },
-          "signature": "ed25519:WGXPasBTGeN5uSyaqL5Q8gdWweTVScwb4aDaQ8PgorL5czLgPyknC1BqnNhP8BoJ9QKeVbNndsvcMtP3DWNU2nJ",
-          "timestamp": "2026-10-31T17:46:31.819Z",
-          "correlationId": "a8ff7e3b-e91d-4e02-bd89-f007c0f31070"
+          "signature": "ed25519:4S37gkotVQnDgoWiQLM2kFZWwzB8ATiof2rRH3Gsefx26SXQPSikVoghpmrCBNziYSnCJ5dubeVgTisVMtJehgac",
+          "timestamp": "2026-11-05T17:34:45.472Z",
+          "correlationId": "330da0d3-58fe-431e-98ec-3ec2839dde35"
         },
         "checks": [
           "delivers exactly 100.0 USDC to intents.near",
-          "pay 0.00130442 (~$101.11), at least 129137 base units",
+          "pay 0.00133144 (~$101.08), at least 131812 base units",
           "withdraw fee 0 (already included)",
-          "escrow message: {\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793472386271000000\",\"customer_id\":\"customer.near\"}}"
+          "escrow message: {\"FundOrder\":{\"agent_id\":\"atlas-research.near\",\"terms_hash\":\"demo\",\"deadline\":\"1793903681688000000\",\"customer_id\":\"customer.near\"}}"
         ]
       }
     },

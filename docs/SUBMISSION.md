@@ -1,16 +1,10 @@
 # Submission kit
 
-Deadline: **2026-11-14 23:59 UTC**. One attempt, no edits. Re-read https://nearhackathon.com/HACKATHON.md before sending.
+Sent on 2026-11-02 (one attempt, no edits). The text below is what was submitted; its numbers are as of that day. The live app shows current totals.
 
-## Still needed from the team
+## Checklist
 
-- [ ] Record the demo video (script below) and publish the X post with it attached
-- [ ] Project name (suggested: `Loca: Line of Credit for Agents`)
-- [ ] Team lead's name, contact email, team size (`1`, `2 - 4`, `4 - 6`, `6 - 8`, `8+`)
-- [ ] Mainnet NEAR account for the payout (e.g. `yourname.near`), created in your own wallet
-- [ ] Whether anyone on the team submits a second project (both READMEs must then name each other)
-- [ ] Agree to: "I agree that the organizers may use these details to review our submission and contact us about this hackathon."
-- [ ] Confirm the final JSON payload before it is sent
+All done: demo post published, project details, payout account, consent, payload confirmed and sent.
 
 Done: public repository with LICENSE, hosted app and swarm, README written for the AI screeners.
 

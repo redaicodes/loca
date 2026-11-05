@@ -82,6 +82,13 @@ impl World {
         id
     }
 
+    /// Save and reload the contract, as between two transactions, so cached writes reach storage.
+    fn reload(&mut self) {
+        env::state_write(&self.c);
+        let fresh: Loca = env::state_read().unwrap();
+        drop(std::mem::replace(&mut self.c, fresh));
+    }
+
     fn bal(&self, who: &str) -> u128 {
         self.c.get_balance(acc(who)).0
     }
@@ -90,13 +97,13 @@ impl World {
     fn assert_conserved(&self) {
         let mut held = 0u128;
         for id in 0..self.c.next_order_id {
-            let o = self.c.get_order(id).unwrap();
+            let Some(o) = self.c.get_order(id) else { continue };
             if matches!(o.status, OrderStatus::Funded | OrderStatus::Delivered | OrderStatus::Disputed) {
                 held += o.amount.0;
             }
         }
         for id in 0..self.c.next_offer_id {
-            let o = self.c.get_offer(id).unwrap();
+            let Some(o) = self.c.get_offer(id) else { continue };
             if o.status == OfferStatus::Open {
                 held += o.principal.0;
             }
@@ -110,7 +117,7 @@ impl World {
         let t = self.c.get_market().totals;
         let mut escrow = 0u128;
         for id in 0..self.c.next_order_id {
-            let o = self.c.get_order(id).unwrap();
+            let Some(o) = self.c.get_order(id) else { continue };
             if matches!(o.status, OrderStatus::Funded | OrderStatus::Delivered | OrderStatus::Disputed) {
                 escrow += o.amount.0;
             }
@@ -422,7 +429,115 @@ fn bond_locked_while_loan_active() {
     w.request(order, usd(30), usd(3));
     let o = w.offer("lender1.near", order, usd(30), usd(1));
     w.as_("agent.near").c.accept_offer(o);
-    w.as_("agent.near").c.withdraw_bond(U128(usd(10)));
+    w.as_("operator.near").c.withdraw_bond(acc("agent.near"), U128(usd(10)));
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_OPERATOR")]
+fn agent_cannot_take_operators_bond() {
+    let mut w = World::new();
+    w.ft("operator.near", usd(10), json!({ "PostBond": { "agent_id": "agent.near" } }));
+    w.as_("agent.near").c.withdraw_bond(acc("agent.near"), U128(usd(10)));
+}
+
+#[test]
+#[should_panic(expected = "ERR_BOND_LOCKED")]
+fn bond_locked_while_lenders_may_bid_on_it() {
+    let mut w = World::new();
+    w.ft("operator.near", usd(10), json!({ "PostBond": { "agent_id": "agent.near" } }));
+    let order = w.fund_order("customer.near", usd(100));
+    w.request(order, usd(30), usd(3));
+    w.offer("lender1.near", order, usd(30), usd(1));
+    // No loan yet, but a lender priced its bid on the bond: pulling it now would be a bait and switch.
+    w.as_("operator.near").c.withdraw_bond(acc("agent.near"), U128(usd(10)));
+}
+
+#[test]
+fn bond_returns_to_operator_after_lock_expires() {
+    let mut w = World::new();
+    w.ft("operator.near", usd(10), json!({ "PostBond": { "agent_id": "agent.near" } }));
+    let order = w.fund_order("customer.near", usd(100));
+    w.request(order, usd(30), usd(3));
+    w.t += 601 * SEC; // request expired, no loan taken
+    w.as_("operator.near").c.withdraw_bond(acc("agent.near"), U128(usd(10)));
+    assert_eq!(w.bal("operator.near"), usd(10));
+    assert_eq!(w.bal("agent.near"), 0);
+    assert_eq!(w.c.get_agent(acc("agent.near")).unwrap().bond, U128(0));
+    w.assert_conserved();
+}
+
+#[test]
+fn only_the_operator_can_post_a_bond() {
+    let mut w = World::new();
+    // A third party (here the agent's own customer) cannot plant a bond; the deposit is credited back.
+    w.ft("customer.near", usd(10), json!({ "PostBond": { "agent_id": "agent.near" } }));
+    assert_eq!(w.c.get_agent(acc("agent.near")).unwrap().bond, U128(0));
+    assert_eq!(w.bal("customer.near"), usd(10));
+    assert_eq!(w.c.get_market().totals.deposits_rejected, 1);
+    w.assert_conserved();
+}
+
+/// One settled, levered order with two bids, then time passes.
+fn settled_levered_order(w: &mut World) -> u64 {
+    let order = w.fund_order("customer.near", usd(100));
+    w.request(order, usd(30), usd(3));
+    let o = w.offer("lender1.near", order, usd(30), usd(1));
+    w.offer("lender2.near", order, usd(30), usd(2));
+    w.as_("agent.near").c.accept_offer(o);
+    w.as_("agent.near").c.mark_delivered(order, "r".into());
+    w.as_("customer.near").c.approve(order);
+    order
+}
+
+#[test]
+fn prune_removes_old_settled_orders_and_refunds_storage() {
+    let mut w = World::new();
+    let order = settled_levered_order(&mut w);
+    let stats = w.c.get_agent(acc("agent.near")).unwrap().stats;
+    let score = w.c.get_score(acc("agent.near")).unwrap().score;
+    let totals = w.c.get_market().totals;
+    let (agent_st, l1_st, l2_st) = (
+        w.c.storage_balance_of(acc("agent.near")).0,
+        w.c.storage_balance_of(acc("lender1.near")).0,
+        w.c.storage_balance_of(acc("lender2.near")).0,
+    );
+    w.t += PRUNE_AFTER_NS + SEC;
+    w.reload();
+    assert_eq!(w.as_("anyone.near").c.prune(None), 1);
+    w.reload();
+
+    assert!(w.c.get_order(order).is_none());
+    assert!(w.c.get_offer(0).is_none() && w.c.get_offer(1).is_none());
+    assert!(w.c.get_loan(0).is_none());
+    assert!(w.c.get_agent_orders(acc("agent.near"), None, None).is_empty());
+    // Storage is a deposit: each payer gets back exactly what its records were charged.
+    let refund = |before: u128, who: &str| w.c.storage_balance_of(acc(who)).0 - before;
+    assert_eq!(refund(agent_st, "agent.near"), STORAGE_ORDER + STORAGE_LOAN);
+    assert_eq!(refund(l1_st, "lender1.near"), STORAGE_OFFER);
+    assert_eq!(refund(l2_st, "lender2.near"), STORAGE_OFFER);
+    // The record that matters survives: stats, score and market totals are unchanged.
+    assert_eq!(w.c.get_agent(acc("agent.near")).unwrap().stats, stats);
+    assert_eq!(w.c.get_score(acc("agent.near")).unwrap().score, score);
+    let m = w.c.get_market();
+    assert_eq!(m.totals, totals);
+    assert_eq!((m.orders_pruned, m.prune_cursor), (1, 1));
+    w.assert_conserved();
+}
+
+#[test]
+fn prune_keeps_recent_and_open_orders() {
+    let mut w = World::new();
+    let settled = settled_levered_order(&mut w);
+    let open = w.fund_order("customer2.near", usd(50));
+    assert_eq!(w.as_("anyone.near").c.prune(None), 0); // too recent
+    w.t += PRUNE_AFTER_NS + SEC;
+    let fresh = w.fund_order("customer3.near", usd(50));
+    assert_eq!(w.as_("anyone.near").c.prune(None), 1);
+    assert!(w.c.get_order(settled).is_none());
+    assert!(w.c.get_order(open).is_some(), "an order still in escrow is never pruned");
+    assert!(w.c.get_order(fresh).is_some());
+    assert_eq!(w.c.get_market().prune_cursor, fresh); // stopped at the first recent order
+    w.assert_conserved();
 }
 
 #[test]
@@ -511,4 +626,22 @@ fn policy_vendor_list_is_bounded() {
     let mut w = World::new();
     let vendors: Vec<AccountId> = (0..11).map(|i| acc(&format!("v{i}.near"))).collect();
     w.as_("operator.near").c.set_spend_policy(acc("agent.near"), vendors, U128(usd(50)));
+}
+
+#[test]
+fn storage_prices_cover_the_records_they_pay_for() {
+    // Size each record as NEAR bills it: key + borsh value + 40 bytes of per-entry overhead.
+    // Account ids at the swarm's length (`spread-credit.loca-swarm-mvwu8dfo.testnet` is 42 chars).
+    let mut w = World::new();
+    let order = settled_levered_order(&mut w);
+    let byte = env::storage_byte_cost().as_yoctonear();
+    let pad = 42 - "lender1.near".len(); // longest id in the swarm vs the ones in this test
+    let entry = |value: usize, ids: usize| ((1 + 8 + value + ids * pad + 40) as u128) * byte;
+    let o = w.c.get_order(order).unwrap();
+    let order_bytes = entry(near_sdk::borsh::to_vec(&o).unwrap().len(), 4) + 8 * byte; // + id in the agent's list
+    let offer_bytes = entry(near_sdk::borsh::to_vec(&w.c.get_offer(0).unwrap()).unwrap().len(), 1);
+    let loan_bytes = entry(near_sdk::borsh::to_vec(&w.c.get_loan(0).unwrap()).unwrap().len(), 3);
+    assert!(STORAGE_ORDER >= order_bytes, "order {order_bytes}");
+    assert!(STORAGE_OFFER >= offer_bytes, "offer {offer_bytes}");
+    assert!(STORAGE_LOAN >= loan_bytes, "loan {loan_bytes}");
 }

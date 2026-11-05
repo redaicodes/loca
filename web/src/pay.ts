@@ -117,7 +117,7 @@ export async function mountPay() {
 function renderQuote(r: QuoteOutcome, symbol: string, chain: string, msg: string) {
   if (!r.ok) {
     return `<div class="q-fail"><span class="pill s-bad">${esc(r.reason)}</span><p>${esc(r.message)}</p>
-      <p class="muted small">${r.reason === "QUOTE_REJECTED" ? "1Click refused the request. Check the refund address matches the origin chain." : r.reason === "ROUTE_UNAVAILABLE" ? "No solver route for this asset." : "The quote failed LOCA's checks and would not be used."}</p></div>`;
+      <p class="muted small">${r.reason === "QUOTE_REJECTED" ? (/refund/i.test(r.message) ? "1Click refused the request. Check the refund address matches the origin chain." : "1Click's solvers aren't quoting this pair right now. Try another asset, or again in a minute. No funds move in a dry quote.") : r.reason === "ROUTE_UNAVAILABLE" ? "No solver route for this asset." : "The quote failed LOCA's checks and would not be used."}</p></div>`;
   }
   const q = r.response.quote;
   return `<div class="q-main">

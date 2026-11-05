@@ -42,6 +42,7 @@ enum StorageKey {
     Balances,
     AgentIds,
     Storage,
+    BondLocks,
 }
 
 #[near(contract_state)]
@@ -69,11 +70,22 @@ pub struct Loca {
     /// Prepaid NEAR for storage (NEP-145 style). Records are charged a flat price with a margin
     /// over their measured size, so the market account never pays for state it did not create.
     storage: LookupMap<AccountId, u128>,
+    /// An agent's bond cannot be withdrawn before this time: lenders may be pricing bids on it.
+    bond_locks: LookupMap<AccountId, u64>,
+    /// Orders from this id on were charged storage; pruning refunds them to whoever paid.
+    charged_from_order: u64,
+    /// Orders from this id on were charged the current prices, which pruning returns in full. Orders
+    /// between `charged_from_order` and this paid older, higher prices and get back the bytes they free.
+    flat_refund_from_order: u64,
+    /// Orders below this id have been considered for pruning.
+    prune_cursor: u64,
+    /// Settled orders removed from state, with their bids and loans.
+    orders_pruned: u64,
 }
 
-/// Layout before storage accounting, for `migrate`.
+/// Layout before bond locks and pruning, for `migrate`.
 #[near(serializers = [borsh])]
-pub struct LocaV2 {
+pub struct LocaV3 {
     owner_id: AccountId,
     arbiter_id: AccountId,
     token_id: AccountId,
@@ -93,19 +105,24 @@ pub struct LocaV2 {
     next_loan_id: u64,
     agent_ids: Vector<AccountId>,
     totals: MarketTotals,
+    storage: LookupMap<AccountId, u128>,
 }
 
 const MILLINEAR: u128 = 1_000_000_000_000_000_000_000;
-/// Flat storage prices at 10^19 yoctoNEAR per byte. Measured on a sandbox: an order is 223 bytes when
-/// created and grows to ~420 as it is requested against and delivered (charged 800); a bid is 161
-/// (charged 400); a loan is 283 (charged 500).
+/// Flat storage prices at 10^19 yoctoNEAR per byte, a little above measured sizes: an order is 223 bytes
+/// when created and grows to ~430 as it is requested against and delivered, plus its id in the agent's
+/// list (charged 500); a bid is 161 (charged 200); a loan is 283 (charged 350). They are deposits: pruning
+/// a settled record returns its price to whoever paid it.
 pub const STORAGE_AGENT: u128 = 10 * MILLINEAR;
-pub const STORAGE_ORDER: u128 = 8 * MILLINEAR;
-pub const STORAGE_OFFER: u128 = 4 * MILLINEAR;
-pub const STORAGE_LOAN: u128 = 5 * MILLINEAR;
+pub const STORAGE_ORDER: u128 = 5 * MILLINEAR;
+pub const STORAGE_OFFER: u128 = 2 * MILLINEAR;
+pub const STORAGE_LOAN: u128 = 35 * MILLINEAR / 10;
 /// Smallest order, in token base units (1 USDC at 6 decimals). Stops dust orders.
 pub const MIN_ORDER: u128 = 1_000_000;
 const MAX_POLICY_VENDORS: usize = 10;
+/// Settled orders stay readable for this long before anyone may prune them.
+pub const PRUNE_AFTER_NS: u64 = 6 * 3_600 * 1_000_000_000;
+const MAX_PRUNE: u32 = 50;
 
 fn add(a: &mut U128, v: u128) {
     a.0 += v;
@@ -161,14 +178,21 @@ impl Loca {
             agent_ids: Vector::new(StorageKey::AgentIds),
             totals: MarketTotals::default(),
             storage: LookupMap::new(StorageKey::Storage),
+            bond_locks: LookupMap::new(StorageKey::BondLocks),
+            charged_from_order: 0,
+            flat_refund_from_order: 0,
+            prune_cursor: 0,
+            orders_pruned: 0,
         }
     }
 
-    /// One-time upgrade from the layout without storage accounting. Keeps all history.
+    /// One-time upgrade that adds bond locks and pruning. Keeps all history. `charged_from_order` is
+    /// the first order created after storage accounting went live; older records were paid for by
+    /// the market itself, so their storage goes back to the owner when pruned.
     #[private]
     #[init(ignore_state)]
-    pub fn migrate() -> Self {
-        let old: LocaV2 = env::state_read().unwrap_or_else(|| env::panic_str("ERR_NO_STATE"));
+    pub fn migrate(charged_from_order: u64) -> Self {
+        let old: LocaV3 = env::state_read().unwrap_or_else(|| env::panic_str("ERR_NO_STATE"));
         Self {
             owner_id: old.owner_id,
             arbiter_id: old.arbiter_id,
@@ -189,7 +213,12 @@ impl Loca {
             next_loan_id: old.next_loan_id,
             agent_ids: old.agent_ids,
             totals: old.totals,
-            storage: LookupMap::new(StorageKey::Storage),
+            storage: old.storage,
+            bond_locks: LookupMap::new(StorageKey::BondLocks),
+            charged_from_order,
+            flat_refund_from_order: old.next_order_id,
+            prune_cursor: 0,
+            orders_pruned: 0,
         }
     }
 
@@ -327,6 +356,9 @@ impl Loca {
         let agent = self.agent(&order.agent_id);
         require!(amount.0 <= agent.policy.max_principal.0, "ERR_EXCEEDS_POLICY");
         self.assert_vendor_allowed(&agent, &vendor_id);
+        // Lenders price bids on the bond, so it stays put until every bid on this request has expired.
+        let lock = self.bond_locks.get(&order.agent_id).copied().unwrap_or(0).max(expires_at.0);
+        self.bond_locks.insert(order.agent_id.clone(), lock);
         order.credit_request = Some(CreditRequest { amount, vendor_id: vendor_id.clone(), max_fee, expires_at });
         emit(
             "credit_requested",
@@ -472,6 +504,62 @@ impl Loca {
         self.settle(order, refund, "cancelled");
     }
 
+    // ---------- state hygiene ----------
+
+    /// Remove settled orders older than six hours, with their bids and loan, oldest first. Anyone may
+    /// call it. The storage each record frees goes back to whoever prepaid it (the agent for its orders
+    /// and loans, each lender for its bids), so the market's state stays bounded and nobody pays twice.
+    /// Scores live in each agent's stats and market totals in `totals`, so neither changes.
+    pub fn prune(&mut self, limit: Option<u32>) -> u32 {
+        let limit = limit.unwrap_or(20).min(MAX_PRUNE);
+        let mut pruned = 0u32;
+        let mut by_agent: Vec<(AccountId, Vec<u64>)> = Vec::new();
+        while pruned < limit && self.prune_cursor < self.next_order_id {
+            let id = self.prune_cursor;
+            let Some(order) = self.orders.get(&id).cloned() else {
+                self.prune_cursor += 1;
+                continue;
+            };
+            if order.created_at.0 + PRUNE_AFTER_NS > now() {
+                break;
+            }
+            self.prune_cursor += 1;
+            if !matches!(order.status, OrderStatus::Released | OrderStatus::Refunded) {
+                continue; // stuck open; leave it readable
+            }
+            let owner = self.owner_id.clone();
+            let charged = id >= self.charged_from_order;
+            let flat = id >= self.flat_refund_from_order;
+            for offer_id in &order.offer_ids {
+                if let Some(offer) = self.offers.remove(offer_id) {
+                    let freed = self.flush_and_measure();
+                    let refund = if flat { STORAGE_OFFER } else { freed };
+                    self.refund_storage(if charged { &offer.lender_id } else { &owner }, refund);
+                }
+            }
+            let had_loan = order.loan_id.map(|l| self.loans.remove(&l).is_some()).unwrap_or(false);
+            self.orders.remove(&id);
+            let freed = self.flush_and_measure();
+            let refund = if flat { STORAGE_ORDER + if had_loan { STORAGE_LOAN } else { 0 } } else { freed };
+            self.refund_storage(if charged { &order.agent_id } else { &owner }, refund);
+            match by_agent.iter_mut().find(|(a, _)| a == &order.agent_id) {
+                Some((_, ids)) => ids.push(id),
+                None => by_agent.push((order.agent_id.clone(), vec![id])),
+            }
+            pruned += 1;
+        }
+        for (agent_id, ids) in by_agent {
+            if let Some(list) = self.agent_orders.get_mut(&agent_id) {
+                list.retain(|i| !ids.contains(i));
+            }
+        }
+        self.orders_pruned += pruned as u64;
+        if pruned > 0 {
+            emit("pruned", json!({ "orders": pruned, "cursor": self.prune_cursor }));
+        }
+        pruned
+    }
+
     // ---------- funds ----------
 
     pub fn withdraw(&mut self) -> near_sdk::Promise {
@@ -501,14 +589,18 @@ impl Loca {
         }
     }
 
-    pub fn withdraw_bond(&mut self, amount: U128) {
-        let mut agent = self.agent(&env::predecessor_account_id());
+    /// The bond is the operator's money: only the operator posts it and only the operator gets it back,
+    /// never while a loan is open or while lenders may still be bidding on the strength of it.
+    pub fn withdraw_bond(&mut self, agent_id: AccountId, amount: U128) {
+        let mut agent = self.agent(&agent_id);
+        require!(env::predecessor_account_id() == agent.operator_id, "ERR_NOT_OPERATOR");
         require!(agent.active_loans == 0, "ERR_ACTIVE_LOANS");
+        require!(now() >= self.bond_locks.get(&agent_id).copied().unwrap_or(0), "ERR_BOND_LOCKED");
         require!(agent.bond.0 >= amount.0 && amount.0 > 0, "ERR_BOND_AMOUNT");
         agent.bond = U128(agent.bond.0 - amount.0);
         sub(&mut self.totals.bonds_held, amount.0);
-        self.credit(&agent.agent_id, amount.0);
-        emit("bond_withdrawn", json!({ "agent_id": agent.agent_id, "amount": amount }));
+        self.credit(&agent.operator_id, amount.0);
+        emit("bond_withdrawn", json!({ "agent_id": agent.agent_id, "operator_id": agent.operator_id, "amount": amount }));
         self.agents.insert(agent.agent_id.clone(), agent);
     }
 
@@ -575,6 +667,8 @@ impl Loca {
             next_order_id: self.next_order_id,
             next_offer_id: self.next_offer_id,
             next_loan_id: self.next_loan_id,
+            prune_cursor: self.prune_cursor,
+            orders_pruned: self.orders_pruned,
             block_timestamp: U64(now()),
         }
     }
@@ -634,6 +728,7 @@ impl FungibleTokenReceiver for Loca {
             }
             TransferMsg::PostBond { agent_id } => {
                 let r = match self.agents.get(&agent_id).cloned() {
+                    Some(agent) if agent.operator_id != sender_id => Err("ERR_NOT_OPERATOR"),
                     Some(mut agent) => {
                         agent.bond = U128(agent.bond.0 + amount.0);
                         add(&mut self.totals.bonds_held, amount.0);
@@ -681,6 +776,23 @@ impl Loca {
         ensure(bal >= price, "ERR_STORAGE_DEPOSIT_REQUIRED")?;
         self.storage.insert(payer.clone(), bal - price);
         Ok(())
+    }
+
+    /// Write pending removals to storage and return the NEAR the freed bytes release.
+    fn flush_and_measure(&mut self) -> u128 {
+        let before = env::storage_usage();
+        self.offers.flush();
+        self.loans.flush();
+        self.orders.flush();
+        before.saturating_sub(env::storage_usage()) as u128 * env::storage_byte_cost().as_yoctonear()
+    }
+
+    fn refund_storage(&mut self, payer: &AccountId, amount: u128) {
+        if amount == 0 {
+            return;
+        }
+        let bal = self.storage.get(payer).copied().unwrap_or(0);
+        self.storage.insert(payer.clone(), bal + amount);
     }
 
     fn credit(&mut self, account_id: &AccountId, amount: u128) {

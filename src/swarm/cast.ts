@@ -2,6 +2,7 @@
 // Every slug is a sub-account of the swarm root: `<slug>.<root>`.
 
 import { STRATEGIES, type BidContext, type BidDecision, type LenderStrategy } from "../agents/lenders.js";
+import { UNDERWRITER_STRATEGY } from "../agents/underwriter.js";
 
 export type VendorKind = "data" | "compute" | "api";
 
@@ -42,8 +43,15 @@ export interface LenderSpec {
   slug: string; name: string; strategy: LenderStrategy;
   /** The lender's own margin on top of its strategy's price, in basis points (negative = undercuts). */
   spreadBps: number;
+  /** Priced by a model on NEAR AI Cloud (src/agents/underwriter.ts) rather than a fixed rule. */
+  ai?: boolean;
 }
 const [coverage, history, concentration] = STRATEGIES;
+/** Stand-in for the AI lender's rule: the real decision is an async model call, made by the swarm runner. */
+const aiUnderwriter: LenderStrategy = {
+  id: UNDERWRITER_STRATEGY, label: "AI underwriter / NEAR AI Cloud",
+  decide: () => ({ bid: false, rationale: ["priced by a model on NEAR AI Cloud"] }),
+};
 export const LENDERS: LenderSpec[] = [
   { slug: "cover-capital", name: "Cover Capital", strategy: coverage, spreadBps: 0 },
   { slug: "track-fund", name: "Track Record Fund", strategy: history, spreadBps: 0 },
@@ -52,6 +60,7 @@ export const LENDERS: LenderSpec[] = [
   { slug: "beacon-credit", name: "Beacon Credit", strategy: history, spreadBps: -40 },
   { slug: "quarry-fund", name: "Quarry Fund", strategy: concentration, spreadBps: 80 },
   { slug: "tidewater", name: "Tidewater Capital", strategy: coverage, spreadBps: -60 },
+  { slug: "sable-ai", name: "Sable AI Underwriting", strategy: aiUnderwriter, spreadBps: 0, ai: true },
 ];
 
 /** The lender's bid: its strategy's price plus its own spread, still capped by the borrower's max fee. */

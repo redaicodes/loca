@@ -1,4 +1,4 @@
-import { CAST, EXPLORER_ACCOUNT, EXPLORER_TX } from "./data";
+import { CAST, EXPLORER_ACCOUNT } from "./data";
 
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -42,8 +42,9 @@ export const acct = (id: string, href?: string) => {
   return `<span class="acct">${main}${name !== id ? `<span class="id mono" title="${esc(id)}">${esc(id)}</span>` : ""}</span>`;
 };
 
+// Opens the app's own transaction view (web/src/tx.ts): the public testnet explorers lag behind the chain.
 export const txLink = (h?: string, text?: string) =>
-  h ? `<a class="mono ext" href="${EXPLORER_TX}${h}" target="_blank" rel="noopener" title="${esc(h)}">${esc(text ?? `${h.slice(0, 6)}…${h.slice(-4)}`)}</a>` : `<span class="muted">–</span>`;
+  h ? `<a class="mono" href="#/app/tx/${esc(h)}" title="${esc(h)}">${esc(text ?? `${h.slice(0, 6)}…${h.slice(-4)}`)}</a>` : `<span class="muted">–</span>`;
 export const accountLink = (id: string, text?: string) =>
   `<a class="mono ext" href="${EXPLORER_ACCOUNT}${id}" target="_blank" rel="noopener">${esc(text ?? id)}</a>`;
 
@@ -63,12 +64,19 @@ export const STRATEGY: Record<string, { name: string; policy: string }> = {
     name: "Repayment history",
     policy: "Lends only to agents with 3+ completed orders and defaults under 5% of closed loans. Fee falls as repayment and fulfillment records grow.",
   },
+  "ai-underwriter": {
+    name: "AI underwriter",
+    policy: "A model on NEAR AI Cloud reads the same public record as the other lenders and decides whether to bid and at what fee. Its one-line reason is stored on chain with each bid. Replies outside 0.5–20% or above the borrower's cap are discarded, and the contract enforces every rule regardless.",
+  },
   "concentration-aware": {
     name: "Concentration-aware",
     policy: "Caps exposure at $60 per agent. Prices off the LOCA Score and the default rate, and adds 2% when one customer dominates revenue.",
   },
 };
-export const strategyName = (s: string) => STRATEGY[s]?.name ?? s;
+/** The AI underwriter writes its reason into the offer's strategy field: "ai: <reason>". */
+const strategyKey = (s: string) => (s.startsWith("ai:") ? "ai-underwriter" : s);
+export const strategyName = (s: string) => STRATEGY[strategyKey(s)]?.name ?? s;
+export const strategyNote = (s: string) => (s.startsWith("ai:") ? s.slice(3).trim() : "");
 
 export const SCORE_LABELS: Record<string, string> = {
   revenue_continuity: "Revenue continuity",

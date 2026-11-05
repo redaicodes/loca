@@ -9,18 +9,19 @@
 An agent borrows against an order its customer has already paid into escrow.<br>
 Lender agents bid on the advance. The escrow pays them back before the agent gets paid.
 
-[![Live on NEAR testnet](https://img.shields.io/badge/NEAR-live%20on%20testnet-00EC97?logo=near&logoColor=white)](https://testnet.nearblocks.io/address/market.loca-swarm-mvwu8dfo.testnet)
+[![Live on NEAR testnet](https://img.shields.io/badge/NEAR-live%20on%20testnet-00EC97?logo=near&logoColor=white)](#check-it-on-chain)
 [![NEAR Hackathon 2026](https://img.shields.io/badge/NEAR%20HACKATHON-Nov%202026-1e1e1e)](https://x.com/hashtag/NEARHackathon)
 [![Open the app](https://img.shields.io/badge/app-open%20live%20demo-2A4C9C)](https://loca.loca-ai.workers.dev)
 [![Contract: Rust](https://img.shields.io/badge/contract-Rust%20%C2%B7%20near--sdk%205.30-B7410E?logo=rust&logoColor=white)](contracts/loca/src/lib.rs)
 [![TypeScript](https://img.shields.io/badge/agents-TypeScript-3178C6?logo=typescript&logoColor=white)](src/agents/lenders.ts)
 [![Hosted on Cloudflare Workers](https://img.shields.io/badge/hosted-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](worker/swarm.ts)
-[![Tests: 40 passing](https://img.shields.io/badge/tests-28%20Rust%20%2B%2012%20TS-2ea44f)](#run-it-yourself)
+[![CI](https://github.com/redaicodes/loca/actions/workflows/ci.yml/badge.svg)](https://github.com/redaicodes/loca/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-35%20Rust%20%2B%2016%20TS-2ea44f)](#run-it-yourself)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 **Tracks:** `agents` · `defi` · `swarms` · `security` · `business`
 
-[Live app](https://loca.loca-ai.workers.dev) · [Live swarm](https://loca.loca-ai.workers.dev/#/app/swarm) · [Launch video](https://loca.loca-ai.workers.dev/loca-launch.mp4) · [Market contract](https://testnet.nearblocks.io/address/market.loca-swarm-mvwu8dfo.testnet) · [Design notes](docs/DESIGN.md)
+[Live app](https://loca.loca-ai.workers.dev) · [Live swarm](https://loca.loca-ai.workers.dev/#/app/swarm) · [Launch video](https://loca.loca-ai.workers.dev/loca-launch.mp4) · [Check it on chain](#check-it-on-chain) · [Design notes](docs/DESIGN.md)
 
 </div>
 
@@ -58,9 +59,10 @@ Nothing to install. A swarm of agents trades on the testnet contract around the 
 |---|---|
 | Open the [live app](https://loca.loca-ai.workers.dev) | Value locked, credit originated, loans and repayment rate, all read from the contract. The "Order replay" window steps through a real settled loan. |
 | Open [Live swarm](https://loca.loca-ai.workers.dev/#/app/swarm) | Customers, agents, lenders and vendors as a graph. Lines pulse as escrows, loans and vendor payments land; the event stream adds a row every few seconds. |
-| Click any agent, e.g. [Quill Translate](https://loca.loca-ai.workers.dev/#/app/agents/quill.loca-swarm-mvwu8dfo.testnet) | Its LOCA Score with the six components and reason codes, its spend policy, and its function-call key read live from NEAR. |
-| Click any order number, then a "tx" link | The order's lifecycle (escrow, bids, loan, delivery, settlement) and each transaction on testnet.nearblocks.io. |
-| Open [Credit auctions](https://loca.loca-ai.workers.dev/#/app/market) | Open credit requests with competing bids, recent auctions, and 16 attacks the market refused, each with its error and transaction. |
+| Click any agent, e.g. [Quill Translate](https://loca.loca-ai.workers.dev/#/app/agents/quill.loca-swarm-mvwu8dfo.testnet) | Its LOCA Score with the six components and reason codes, its spend policy, and its keys read live from NEAR: one function-call key, no full-access key. |
+| Click any order number | The order's lifecycle (escrow, bids, loan, delivery, settlement) and the waterfall that split the escrow. |
+| Open [Credit auctions](https://loca.loca-ai.workers.dev/#/app/market) and click a "tx" link in the attack table | Every attack the market refused, with its error. Each link opens the transaction as the chain recorded it (signer, call, arguments, the `ERR_*` it failed with), read from NEAR through FastNEAR. |
+| Open [Lenders](https://loca.loca-ai.workers.dev/#/app/lenders) | Seven rule-based lender agents and an AI underwriter. The AI lender's bids carry the model's one-line reason, stored on chain with the bid. |
 | Open [Pay with any token](https://loca.loca-ai.workers.dev/#/app/pay) and press **Get quote** | A live NEAR Intents quote for funding an order with ETH, SOL or BTC from another chain, and the exact message the escrow will receive. |
 | Open [Join the market](https://loca.loca-ai.workers.dev/#/app/join) | Commands for each role, plus a prompt and tool definitions for plugging in Hermes, OpenClaw or another agent framework. |
 
@@ -87,15 +89,32 @@ Loca is one Rust contract on NEAR plus agents that call it. These NEAR features 
 | **NEP-141 / NEP-145** | Escrow, bonds and bids are `ft_transfer_call` deposits of a USDC-style token. Participants prepay storage, so spam can't drain the market account. |
 | **Fast finality** | A loan is requested, bid on, accepted and paid out to a vendor in seconds, so an agent can borrow inside the job it's doing. |
 
+## Check it on chain
+
+The public testnet explorers have fallen weeks behind the chain, so the app reads transactions itself. Every number in the app comes from contract views anyone can call. Three checks, no keys needed:
+
+```sh
+RPC=https://rpc.testnet.fastnear.com
+# Market totals: orders, loans, repaid, defaulted, value locked
+curl -s $RPC -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.loca-swarm-mvwu8dfo.testnet","method_name":"get_market","args_base64":"e30="}}' \
+  | python3 -c 'import json,sys; print(bytes(json.load(sys.stdin)["result"]["result"]).decode())'
+
+# An agent's keys: a single function-call key limited to five market methods, and no full-access key
+curl -s $RPC -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_access_key_list","finality":"final","account_id":"atlas.loca-swarm-mvwu8dfo.testnet"}}'
+
+# Any transaction from docs/guardrails.json, with receipts and logs
+curl -s https://tx.test.fastnear.com/v0/transactions -H 'content-type: application/json' -d '{"tx_hashes":["<hash>"]}'
+```
+
 ## Run it yourself
 
-You need Rust (pinned by `rust-toolchain.toml`), [`cargo-near`](https://github.com/near/cargo-near), Node 20+ and pnpm. No funds or keys are needed for any of this.
+You need Rust (pinned by `rust-toolchain.toml`), [`cargo-near`](https://github.com/near/cargo-near), Node 20+ and pnpm. No funds or keys are needed for any of this. [CI](.github/workflows/ci.yml) runs the first five on every push.
 
 ```sh
 pnpm install
 pnpm build:contracts   # contracts/target/near/{loca,test_token}/*.wasm
-pnpm test:contracts    # 28 Rust unit tests
-pnpm test              # 12 TypeScript tests (lender strategies, Intents adapter, events)
+pnpm test:contracts    # 35 Rust unit tests
+pnpm test              # 16 TypeScript tests (lender strategies, AI underwriter, Intents adapter, events)
 pnpm demo:sim          # starts a local NEAR node and runs the whole loop
 pnpm intents:quote     # live NEAR Intents dry quotes
 pnpm web:dev           # the app on http://localhost:5173
@@ -118,15 +137,19 @@ npx tsx scripts/testnet-account.mts   # optional: a faucet-funded testnet accoun
 pnpm demo:testnet                     # same loop on testnet, with nearblocks links
 ```
 
-An earlier run is recorded in [docs/testnet-run.json](docs/testnet-run.json). Two examples: [the vendor paid by the loan](https://testnet.nearblocks.io/txns/HmTL4J53cKdnyN1M6cfQpg5hPMDnniDH1fcAntc1uEHt) and [the repayment waterfall](https://testnet.nearblocks.io/txns/GwXt5PZnTyhjzX7Bz61DZkWsGCjRfAEah3ZeDcT1rXeJ).
+An earlier run is recorded in [docs/testnet-run.json](docs/testnet-run.json). Two examples: [the vendor paid by the loan](https://loca.loca-ai.workers.dev/#/app/tx/HmTL4J53cKdnyN1M6cfQpg5hPMDnniDH1fcAntc1uEHt) and [the repayment waterfall](https://loca.loca-ai.workers.dev/#/app/tx/GwXt5PZnTyhjzX7Bz61DZkWsGCjRfAEah3ZeDcT1rXeJ).
 
 ## The live swarm
 
-Sixteen service agents under eight operators, fourteen customers, seven lender agents, six vendors and an arbiter trade on [`market.loca-swarm-mvwu8dfo.testnet`](https://testnet.nearblocks.io/address/market.loca-swarm-mvwu8dfo.testnet). Every order, bid, loan, delivery, dispute, default and settlement is a real transaction.
+Sixteen service agents under eight operators, fourteen customers, eight lender agents, six vendors and an arbiter trade on `market.loca-swarm-mvwu8dfo.testnet`. Every order, bid, loan, delivery, dispute, default and settlement is a real transaction. (`get_market` counts 18 agents: the other two are test accounts that `pnpm guardrails` attacks the market from.)
 
-They don't all behave well, which is the point. Agents differ in price, reliability and how often they borrow. Customers approve, go silent (a keeper finalizes after the window), dispute (the arbiter rules) or cancel after a missed deadline. Lenders price each request from the agent's record, so agents who default pay more and eventually get no bids at all.
+They don't all behave well, which is the point. Agents differ in price, reliability and how often they borrow. Customers approve, go silent (a keeper finalizes after the window), dispute (the arbiter rules) or cancel after a missed deadline. Lenders price each request from the agent's record, so agents who default pay more and eventually get no bids at all. Seven lenders run fixed strategies; the eighth, Sable AI Underwriting, sends the same public record to a model on NEAR AI Cloud and bids with whatever it decides, inside limits the code checks.
 
-The swarm runs as a [Cloudflare Worker](worker/swarm.ts) on a one-minute cron, on the free plan. It keeps no state. Each tick reads open orders from the contract, moves each one a step, and opens new orders for idle agents. An order's fate (does the agent borrow, miss its deadline, does the customer dispute) is a hash of the order id, so ticks agree without a database. When the root account drops below 60 testnet NEAR, the worker refills it from the testnet faucet.
+What's simulated and what isn't: the service agents' work and their customers' choices are scripted (the deliverable is a hash, and each order's fate is drawn from its id). The money flow, the credit records, the scores and every rule are real contract state on testnet.
+
+The swarm runs as a [Cloudflare Worker](worker/swarm.ts) on a one-minute cron, on the free plan. It keeps no state. Each tick reads open orders from the contract, moves each one a step, and opens new orders for idle agents. An order's fate (does the agent borrow, miss its deadline, does the customer dispute) is a hash of the order id, so ticks agree without a database.
+
+Every account signs with its own key, derived from one seed (the simulator plays every role; in a real market each party holds only its own). Agent accounts have no full-access key at all. The worker holds no key for the market contract or the token. Settled orders are pruned after six hours and their storage deposits refunded, so state stays bounded and the swarm runs on its own testnet NEAR without topping up from a faucet.
 
 ```sh
 pnpm faucet root              # testnet root account, key saved to .env
@@ -154,10 +177,12 @@ escrow   ──waterfall──▶ lender principal + fee │ bond covers any sho
 | Market contract | [contracts/loca](contracts/loca/src/lib.rs) | Agent identity and operator spend policy, order escrow, lender offers, loans, the repayment waterfall, disputes, a kill switch |
 | LOCA Score | [score.rs](contracts/loca/src/score.rs) | `get_score(agent_id)`: 0–1000 with components, weights and reason codes, computed only from onchain history |
 | Lender agents | [lenders.ts](src/agents/lenders.ts) | Three deterministic strategies (escrow coverage, repayment history, concentration-aware), each pricing in the agent's default rate and logging why |
+| AI underwriter | [underwriter.ts](src/agents/underwriter.ts) | A lender that asks a model on NEAR AI Cloud whether to bid and at what fee; replies are validated, and the reason is stored on chain with the bid |
 | Intents adapter | [oneclick.ts](src/intents/oneclick.ts) | `EXACT_OUTPUT` USDC quotes delivered to the contract with the order message; checks minimum received, slippage, deadline, and that the message is untouched |
 | Swarm | [worker/swarm.ts](worker/swarm.ts), [cast.ts](src/swarm/cast.ts) | The multi-agent economy, hosted |
 | Research agent | [research.ts](src/agents/research.ts) | Buys data from a vendor and writes the report, using NEAR AI Cloud when `NEAR_AI_API_KEY` is set |
-| App | [web/](web/src/main.ts) | Landing page and dashboard that read contract views every few seconds |
+| App | [web/](web/src/main.ts) | Landing page and dashboard that read contract views every few seconds, and a [transaction viewer](web/src/tx.ts) |
+| Upgrade check | [upgrade-rehearsal.ts](scripts/upgrade-rehearsal.ts) | Deploys the previous build on a local node, trades on it, upgrades and migrates it, then checks history, balances and the new rules |
 
 The contract never panics on a deposit that breaks a business rule. It credits the sender instead, so a payment arriving through Intents can't get stuck.
 
@@ -172,6 +197,10 @@ The contract never panics on a deposit that breaks a business rule. It credits t
 |---|---|
 | Agent spends the loan on itself | Proceeds go only to a vendor on both the operator's policy and the market's approved list |
 | Operator poses as customer or lender | Onchain related-party checks. Off-chain sybils are **not** detected; lenders require a bond or a rated history. |
+| Operator pulls the bond after lenders priced on it | The bond is locked until the agent's last credit request expires, and while any loan is open |
+| Agent takes its operator's bond, or a stranger plants one | Only the operator can post the bond or withdraw it, and withdrawals go back to the operator |
+| A stolen agent key | It can call five market methods and nothing else. The agent account has no full-access key to steal. |
+| State bloat | Every record is paid for by a storage deposit; settled records are pruned after six hours and the deposit refunded |
 | Customer never approves | Anyone can `finalize` after the dispute window |
 | Agent never delivers | Customer cancels after the deadline; the bond covers the lender first; any remaining shortfall is recorded as a default |
 | Same order pledged twice | One lien per order; a second `accept_offer` fails |
@@ -184,10 +213,11 @@ More on each choice: [docs/DESIGN.md](docs/DESIGN.md).
 ## Known limits
 
 - This is a hackathon prototype on testnet. It hasn't been audited, and the score weights are rules of thumb, not a validated credit model.
-- The contract uses near-sdk 5.30, which needs nearcore 2.14 host functions. Testnet (protocol 88) has them; mainnet was on protocol 86 as of 2026-10-31.
+- The contract uses near-sdk 5.30, which needs nearcore 2.14 host functions. Testnet (protocol 88) has them; mainnet was on protocol 87 as of 2026-11-05, so a mainnet deployment waits for the next upgrade.
 - NEAR Intents has no testnet. Quotes are live mainnet dry runs (`dry: true`, no funds) sent to a stand-in recipient, because 1Click only quotes to existing mainnet accounts. A real swap needs a mainnet deployment.
 - The contract owner curates the vendor list for now.
-- The research agent's NEAR AI Cloud path hasn't been run without an API key; demos use the offline writer.
+- The AI underwriter and the research agent call NEAR AI Cloud only when `NEAR_AI_API_KEY` is set; without it the AI lender sits out and the research agent uses an offline writer.
+- The swarm simulator holds the seed that derives every participant's key. In a real deployment each party runs its own process with its own key; the contract's related-party checks are written for that case.
 
 ## Built with
 

@@ -3,28 +3,32 @@
 // It keeps no state of its own. Each tick reads the open orders from the market contract and advances
 // every one by a single step (borrow, bid, accept, deliver, approve, settle), then opens a few new
 // orders. Each order's fate (does the agent borrow, miss the deadline, does the customer dispute) is a
-// hash of its id, so every tick reaches the same decisions. Agents sign with their function-call keys.
+// hash of its id, so every tick reaches the same decisions. Every account signs with its own key, derived
+// from SWARM_SEED (src/swarm/keys.ts); agents hold only a function-call key for five market methods, and
+// the worker holds no key for the market contract or the token.
 //
 // Free-plan limits shape the code: at most 50 network requests and a few ms of CPU per run, so one block
 // hash and one nonce lookup per signer are shared across a tick, and signing uses native WebCrypto.
 
-import { actions, baseDecode, baseEncode, base64Encode, createTransaction, encodeTransaction, KeyType, PublicKey, Signature, SignedTransaction } from "near-api-js";
-import type { BidContext } from "../src/agents/lenders.js";
+import { actions, baseDecode, base64Encode, createTransaction, encodeTransaction, KeyType, PublicKey, Signature, SignedTransaction } from "near-api-js";
+import type { BidContext, BidDecision } from "../src/agents/lenders.js";
+import { underwrite } from "../src/agents/underwriter.js";
 import { AGENT_METHODS, AGENTS, CUSTOMERS, DISPUTE_WINDOW_SEC, LENDERS, OPERATORS, VENDORS, lenderQuote, vendorsOf, type AgentSpec } from "../src/swarm/cast.js";
+import { deriveKey } from "../src/swarm/keys.js";
 import type { Agent, Loan, Offer, Order, ScoreReport } from "../src/lib/types.js";
 
 export interface Env {
   SWARM_ACCOUNT_ID: string;
   SWARM_PRIVATE_KEY: string;
-  SWARM_SUBKEY: string;
-  /** JSON object: agent slug -> function-call private key. */
-  AGENT_KEYS: string;
+  /** Seed every participant's key is derived from (src/swarm/keys.ts). */
+  SWARM_SEED: string;
   RPCS?: string;
   /** New orders opened per tick when the root is well funded. */
   PACE?: string;
   PAUSED?: string;
-  /** Refill the root from the faucet below this many testnet NEAR (default 60). */
-  TOPUP_BELOW?: string;
+  /** NEAR AI Cloud key for the AI underwriter lender; without it that lender sits out. */
+  NEAR_AI_API_KEY?: string;
+  NEAR_AI_MODEL?: string;
 }
 
 const TGAS = 1_000_000_000_000n;
@@ -59,18 +63,19 @@ const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g,
 class Signer {
   nonce?: bigint;
   private key?: CryptoKey;
-  readonly publicKey: PublicKey;
+  publicKey!: PublicKey;
   private chain: Promise<unknown> = Promise.resolve();
-  constructor(readonly accountId: string, private readonly secret: string) {
-    const raw = baseDecode(secret.replace(/^ed25519:/, ""));
+  /** The secret may still be being derived; `ready` resolves once it is loaded. */
+  constructor(readonly accountId: string, private readonly secret: Promise<string>) {}
+  async ready() {
+    if (this.key) return;
+    const raw = baseDecode((await this.secret).replace(/^ed25519:/, ""));
     this.publicKey = new PublicKey({ keyType: KeyType.ED25519, data: raw.slice(32, 64) });
+    this.key = await crypto.subtle.importKey("jwk", { kty: "OKP", crv: "Ed25519", d: b64url(raw.slice(0, 32)), x: b64url(raw.slice(32, 64)) }, { name: "Ed25519" }, false, ["sign"]);
   }
   async sign(hash: Uint8Array): Promise<Uint8Array> {
-    if (!this.key) {
-      const raw = baseDecode(this.secret.replace(/^ed25519:/, ""));
-      this.key = await crypto.subtle.importKey("jwk", { kty: "OKP", crv: "Ed25519", d: b64url(raw.slice(0, 32)), x: b64url(raw.slice(32, 64)) }, { name: "Ed25519" }, false, ["sign"]);
-    }
-    return new Uint8Array(await crypto.subtle.sign("Ed25519", this.key, new Uint8Array(hash)));
+    await this.ready();
+    return new Uint8Array(await crypto.subtle.sign("Ed25519", this.key!, new Uint8Array(hash)));
   }
   /** One transaction at a time per signer, so nonces stay in order. */
   serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -125,6 +130,7 @@ class Chain {
 
   async send(s: Signer, receiver: string, action: ReturnType<typeof actions.functionCall>): Promise<string> {
     return s.serial(async () => {
+      await s.ready();
       if (!this.blockHash) this.blockHash = baseDecode((await this.rpc<{ header: { hash: string } }>("block", { finality: "final" })).header.hash);
       if (s.nonce === undefined) {
         const ak = await this.rpc<{ nonce: number }>("query", { request_type: "view_access_key", finality: "optimistic", account_id: s.accountId, public_key: s.publicKey.toString() });
@@ -244,9 +250,13 @@ async function step(c: Ctx, o: Order, offers: Offer[], loans: Loan[]): Promise<b
       if (since < DISPUTE_WINDOW_SEC + 5) return false;
       const hash = await c.chain.send(c.root, c.market, call("finalize", { order_id: o.id }));
       c.log("order_settled", `${customer} stayed silent; keeper finalizes #${o.id}`, { tx: hash });
-    } else {
+    } else if (since < DISPUTE_WINDOW_SEC - 3) {
       const hash = await c.chain.send(c.signer(customer), c.market, call("dispute", { order_id: o.id, reason_hash: (await sha256hex(`dispute ${o.id}`)).slice(0, 16) }));
       c.log("order_disputed", `${customer} disputes #${o.id}`, { tx: hash });
+    } else {
+      // A busy tick reached this order after its dispute window closed: the customer missed its chance.
+      const hash = await c.chain.send(c.root, c.market, call("finalize", { order_id: o.id }));
+      c.log("order_settled", `${customer} missed the dispute window; keeper finalizes #${o.id}`, { tx: hash });
     }
     return true;
   }
@@ -270,21 +280,38 @@ async function bid(c: Ctx, o: Order, spec: AgentSpec, loans: Loan[]): Promise<bo
     order: o, request: o.credit_request!, agent, score,
     exposureToAgent: loans.filter((l) => l.status === "Active" && l.lender_id === lenderId && l.agent_id === o.agent_id).reduce((a, l) => a + BigInt(l.principal), 0n),
   });
-  const quotes = LENDERS.map((l) => ({ l, d: lenderQuote(l, ctx(c.id(l.slug))) })).filter((q) => q.d.bid);
+  const quotes: { l: (typeof LENDERS)[number]; d: BidDecision; strategy: string }[] = LENDERS.filter((l) => !l.ai)
+    .map((l) => ({ l, d: lenderQuote(l, ctx(c.id(l.slug))), strategy: l.strategy.id }))
+    .filter((q) => q.d.bid);
+  // The AI underwriter reads the same public record and answers through a model; its reason goes on chain
+  // in the offer's strategy field, so anyone can see why it priced the loan the way it did.
+  const ai = LENDERS.find((l) => l.ai);
+  if (ai && c.env.NEAR_AI_API_KEY && c.chain.left() >= 6) {
+    c.chain.requests++;
+    try {
+      const d = await underwrite(ctx(c.id(ai.slug)), { apiKey: c.env.NEAR_AI_API_KEY, model: c.env.NEAR_AI_MODEL });
+      // The contract caps the field at 64 bytes, so keep it to printable ASCII.
+      if (d.bid) quotes.push({ l: ai, d, strategy: `ai: ${d.rationale[0]}`.replace(/[^\x20-\x7e]/g, "").slice(0, 64) });
+      else c.log("ai_declined", `${ai.name} (${d.model}) passes on #${o.id}: ${d.rationale[0]}`);
+    } catch (e) {
+      c.log("error", `ai underwriter on #${o.id}: ${String((e as Error).message).slice(0, 120)}`);
+    }
+  }
   if (!quotes.length) {
     if (c.now > BigInt(o.credit_request!.expires_at) - BigInt(CREDIT_TTL_SEC - 70) * SEC) return false; // already reported
     c.log("no_bids", `No lender would fund ${spec.name} (score ${score.score}); it works without a loan`);
     return true;
   }
   // Each lender's bid costs two requests (nonce + send); bid with as many as the budget allows, cheapest first.
-  quotes.sort((a, b) => Number((a.d as { fee: bigint }).fee - (b.d as { fee: bigint }).fee));
+  // The AI lender always gets a slot, so its decisions show up on chain even when it isn't cheapest.
+  quotes.sort((a, b) => Number(b.l.ai ?? false) - Number(a.l.ai ?? false) || Number((a.d as { fee: bigint }).fee - (b.d as { fee: bigint }).fee));
   const room = Math.max(1, Math.floor((c.chain.left() - 2) / 2));
-  await Promise.all(quotes.slice(0, Math.min(4, room)).map(async ({ l, d }) => {
+  await Promise.all(quotes.slice(0, Math.min(4, room)).map(async ({ l, d, strategy }) => {
     if (!d.bid) return;
     try {
       const hash = await c.chain.send(c.signer(l.slug), c.usdc, call("ft_transfer_call", {
         receiver_id: c.market, amount: o.credit_request!.amount,
-        msg: JSON.stringify({ MakeOffer: { order_id: o.id, fee: d.fee.toString(), expires_at: o.credit_request!.expires_at, strategy: l.strategy.id } }),
+        msg: JSON.stringify({ MakeOffer: { order_id: o.id, fee: d.fee.toString(), expires_at: o.credit_request!.expires_at, strategy } }),
       }, 100n, 1n));
       c.log("offer_made", `${l.name} bids ${fmt(d.fee)} (${(d.feeBps / 100).toFixed(2)}%) on #${o.id}`, { tx: hash });
     } catch (e) {
@@ -337,6 +364,12 @@ function upkeepTasks(): Task[] {
     if (owed < 5n * USDC_UNIT) return;
     await c.chain.send(agent ? c.agentSigner(slug) : c.signer(slug), c.market, call("withdraw", {}, 60n));
   };
+  const reclaimOwnerStorage: Task = async (c) => {
+    const bal = BigInt(await c.chain.view<string>(c.market, "storage_balance_of", { account_id: c.env.SWARM_ACCOUNT_ID }));
+    if (bal < NEAR / 2n) return;
+    await c.chain.send(c.root, c.market, call("storage_withdraw", {}, 30n));
+    c.log("storage", `root reclaims ${(Number(bal / (NEAR / 1000n)) / 1000).toFixed(2)} testnet NEAR of storage freed by pruning`);
+  };
   const storage = (slug: string): Task => async (c) => {
     const bal = BigInt(await c.chain.view<string>(c.market, "storage_balance_of", { account_id: c.id(slug) }));
     if (bal >= (6n * NEAR) / 100n) return;
@@ -349,57 +382,17 @@ function upkeepTasks(): Task[] {
     await c.chain.send(c.signer(a.operator), c.usdc, call("ft_transfer_call", { receiver_id: c.market, amount: (BigInt(a.bond) * USDC_UNIT).toString(), msg: JSON.stringify({ PostBond: { agent_id: c.id(a.slug) } }) }, 100n, 1n));
     c.log("bond_posted", `${a.operator} tops up ${a.name}'s bond`);
   };
-  // The market contract holds storage prepayments; return what it doesn't need to the root.
-  const sweepMarket: Task = async (c) => {
-    const v = await c.chain.account(c.market);
-    const free = BigInt(v.amount) - BigInt(v.storage_usage) * 10n ** 19n;
-    if (free <= 12n * NEAR) return;
-    await c.chain.send(c.signer("market"), c.env.SWARM_ACCOUNT_ID, actions.transfer(free - 8n * NEAR));
-    c.log("topup", `market returns ${(Number((free - 8n * NEAR) / (NEAR / 1000n)) / 1000).toFixed(2)} unused testnet NEAR to the root`);
-  };
-
   for (const a of AGENTS) tasks.push(storage(a.slug), withdraw(a.slug, true), bond(a), nearFloor(a.slug, "0.3", "0.4"));
   for (const l of LENDERS) tasks.push(storage(l.slug), withdraw(l.slug, false), usdcFloor(l.slug, 400, 1500), nearFloor(l.slug, "0.3", "0.4"));
   for (const cu of CUSTOMERS) tasks.push(usdcFloor(cu, 400, 2000), nearFloor(cu, "0.15", "0.3"));
   for (const v of VENDORS) tasks.push(withdraw(v.slug, false), nearFloor(v.slug, "0.15", "0.3"));
   for (const o of OPERATORS) tasks.push(usdcFloor(o, 60, 300), nearFloor(o, "0.15", "0.3"));
-  tasks.push(nearFloor("arbiter", "0.15", "0.3"), sweepMarket, nearFloor("market", "1", "2"));
+  // Pruned orders return their storage deposits to the agents and lenders that paid them; the owner's
+  // share (records from before storage was charged) comes back to the root.
+  tasks.push(nearFloor("arbiter", "0.15", "0.3"), nearFloor("market", "1", "2"), reclaimOwnerStorage);
   return tasks;
 }
 const UPKEEP = upkeepTasks();
-
-// ---------------------------------------------------------------- faucet top-up
-
-const TOPUP_EVERY_MIN = 15;
-
-/** Creates a throwaway account with the testnet faucet and deletes it into the root, which moves its
- *  whole balance there. The faucet rate-limits by IP; a refusal is logged and retried next window. */
-async function faucetTopup(c: Ctx) {
-  const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
-  const jwk = (await crypto.subtle.exportKey("jwk", pair.privateKey)) as { d: string; x: string };
-  const bytes = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0));
-  const secret = `ed25519:${baseEncode(new Uint8Array([...bytes(jwk.d), ...bytes(jwk.x)]))}`;
-  const tmp = new Signer(`loca-tmp-${Date.now().toString(36)}.testnet`, secret);
-  c.chain.requests++;
-  const res = await fetch("https://helper.nearprotocol.com/account", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ newAccountId: tmp.accountId, newAccountPublicKey: tmp.publicKey.toString() }),
-  });
-  if (!res.ok) {
-    c.log("topup", `faucet refused (${res.status}): ${(await res.text()).slice(0, 80)}`);
-    return;
-  }
-  // The faucet answers before the account is visible to RPC; wait for it.
-  for (let i = 0; ; i++) {
-    await new Promise((r) => setTimeout(r, 2500));
-    if (await c.chain.account(tmp.accountId).then(() => true, () => false)) break;
-    if (i === 5) throw new Error(`${tmp.accountId} never appeared`);
-  }
-  // The gas refund goes to the deleted account and fails with AccountDoesNotExist; the sweep itself succeeded.
-  const hash = await c.chain.send(tmp, tmp.accountId, actions.deleteAccount(c.env.SWARM_ACCOUNT_ID))
-    .catch((e) => { if (e instanceof TxFailed && /AccountDoesNotExist/.test(e.message)) return e.hash; throw e; });
-  c.log("topup", `faucet account ${tmp.accountId} swept into the root`, { tx: hash });
-}
 
 // ---------------------------------------------------------------- entry
 
@@ -407,19 +400,18 @@ export async function tick(env: Env): Promise<{ requests: number; txs: number; s
   const chain = new Chain(env.RPCS ?? "https://rpc.testnet.fastnear.com,https://test.rpc.fastnear.com");
   const rootId = env.SWARM_ACCOUNT_ID;
   const id = (slug: string) => `${slug}.${rootId}`;
-  const agentKeys = JSON.parse(env.AGENT_KEYS || "{}") as Record<string, string>;
   const signers = new Map<string, Signer>();
-  const get = (accountId: string, key: string) => {
-    let s = signers.get(`${accountId}|${key}`);
-    if (!s) signers.set(`${accountId}|${key}`, (s = new Signer(accountId, key)));
+  const get = (accountId: string, role: "full" | "agent") => {
+    let s = signers.get(`${accountId}|${role}`);
+    if (!s) signers.set(`${accountId}|${role}`, (s = new Signer(accountId, deriveKey(env.SWARM_SEED, accountId, role))));
     return s;
   };
   const lines: string[] = [];
   const c: Ctx = {
     env, chain, id, market: id("market"), usdc: id("usdc"), now: BigInt(Date.now()) * 1_000_000n,
-    signer: (slug) => get(id(slug), env.SWARM_SUBKEY),
-    agentSigner: (slug) => (agentKeys[slug] ? get(id(slug), agentKeys[slug]) : get(id(slug), env.SWARM_SUBKEY)),
-    root: get(rootId, env.SWARM_PRIVATE_KEY),
+    signer: (slug) => get(id(slug), "full"),
+    agentSigner: (slug) => get(id(slug), "agent"),
+    root: new Signer(rootId, Promise.resolve(env.SWARM_PRIVATE_KEY)),
     log: (kind, text, data = {}) => lines.push(`${kind.padEnd(16)} ${text}${data.tx ? `  tx ${data.tx}` : ""}`),
   };
   let steps = 0;
@@ -450,14 +442,19 @@ export async function tick(env: Env): Promise<{ requests: number; txs: number; s
       }
     }
 
-    // Pace new orders by the root's NEAR, since every order permanently uses some contract storage,
-    // and refill the root from the testnet faucet when it runs low.
+    // Keep state bounded: settled orders older than six hours are pruned and their storage deposits refunded.
+    if (minute % 2 === 0 && chain.left() >= 10) {
+      const hash = await chain.send(c.root, c.market, call("prune", { limit: 12 }, 300n)).catch((e) => {
+        c.log("error", `prune: ${String((e as Error).message).slice(0, 140)}`);
+        return null;
+      });
+      if (hash) c.log("pruned", "settled orders older than 6h pruned; storage deposits refunded", { tx: hash });
+    }
+
+    // Pace new orders by the root's NEAR, which pays the swarm's gas. No faucet: it runs on what it has.
     if (!env.PAUSED && chain.left() >= 8) {
       const root = await chain.account(rootId);
       const near = Number(BigInt(root.amount) / NEAR);
-      if (near < Number(env.TOPUP_BELOW ?? 60) && minute % TOPUP_EVERY_MIN === 0) {
-        await faucetTopup(c).catch((e) => c.log("error", `topup: ${String((e as Error).message).slice(0, 140)}`));
-      }
       const pace = Number(env.PACE ?? 2);
       const count = near > 40 ? pace : near > 15 ? 1 : near > 5 ? (minute % 3 === 0 ? 1 : 0) : 0;
       if (count === 0) c.log("paused", `root has ${near} testnet NEAR; new orders paused until it is topped up`);

@@ -1,17 +1,21 @@
 // LOCA agent swarm on NEAR testnet: eight service agents, their operators, customers, three
 // lender agents, vendors and an arbiter, all trading on one LOCA market with real transactions.
 //
-//   pnpm swarm setup            deploy a fresh market + accounts under SWARM_ACCOUNT_ID (once)
-//   pnpm swarm run [minutes]    run the economy (default 60 minutes; Ctrl-C to stop)
+//   pnpm swarm setup              deploy a fresh market + accounts under SWARM_ACCOUNT_ID (once)
+//   pnpm swarm run [minutes]      run the economy (default 60 minutes; Ctrl-C to stop)
+//   pnpm swarm upgrade <id>       deploy the current build over the live market and migrate it
+//   pnpm swarm rotate add|remove  move every account onto its own key (see src/swarm/keys.ts)
 //
-// Testnet only. Funds come from the testnet faucet (scripts/faucet.mts). The market and every
-// participant's key live under the swarm root account; the shared sub-account key is in .env.
+// Testnet only. Every participant is a sub-account of the swarm root with its own key, derived from
+// SWARM_SEED. Agents hold only a function-call key. The market and token keys (MARKET_KEY, USDC_KEY)
+// stay with the deployer and are never given to the hosted worker.
 
 import "dotenv/config";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPair, type KeyPairString, nearToYocto } from "near-api-js";
+import { Account, actions, FailoverRpcProvider, JsonRpcProvider, KeyPair, type KeyPairString, nearToYocto, PublicKey } from "near-api-js";
+import { deriveKey } from "../src/swarm/keys.js";
 import { ACTORS, AGENT_METHODS, AGENTS, CUSTOMERS, DISPUTE_WINDOW_SEC, LENDERS, OPERATORS, VENDORS, vendorsOf, lenderQuote, type AgentSpec } from "../src/swarm/cast.js";
 import { sha256 } from "../src/agents/research.js";
 import { call, ContractError, type TxResult } from "../src/lib/near.js";
@@ -54,13 +58,35 @@ const id = (slug: string) => `${slug}.${ROOT_ID}`;
 const LOCA = id("market");
 const USDC = id("usdc");
 
-let SUB_KEY = process.env.SWARM_SUBKEY;
+// Every account's own key: derived from SWARM_SEED for participants, held separately for the contracts.
+let SEED = process.env.SWARM_SEED;
+const KEYS = new Map<string, string>();
+async function loadKeys() {
+  if (!SEED) {
+    SEED = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
+    appendFileSync(join(ROOT_DIR, ".env"), `\nSWARM_SEED=${SEED}\n`);
+  }
+  for (const slug of ACTORS) {
+    KEYS.set(slug, await deriveKey(SEED, id(slug), "full"));
+    if (AGENTS.some((a) => a.slug === slug)) KEYS.set(`${slug}#agent`, await deriveKey(SEED, id(slug), "agent"));
+  }
+  for (const [slug, name] of [["market", "MARKET_KEY"], ["usdc", "USDC_KEY"]] as const) {
+    let k = process.env[name];
+    if (!k) {
+      k = KeyPair.fromRandom("ed25519").toString();
+      appendFileSync(join(ROOT_DIR, ".env"), `\n${name}=${k}\n`);
+      process.env[name] = k;
+    }
+    KEYS.set(slug, k);
+  }
+}
 const accounts = new Map<string, Account>();
 const acct = (slug: string) => {
   let a = accounts.get(slug);
-  if (!a) accounts.set(slug, (a = new Account(id(slug), provider, SUB_KEY as KeyPairString)));
+  if (!a) accounts.set(slug, (a = new Account(id(slug), provider, KEYS.get(slug) as KeyPairString)));
   return a;
 };
+const pubOf = (key: string) => KeyPair.fromString(key as KeyPairString).getPublicKey();
 
 // Free RPCs rate-limit bursts, so the whole swarm keeps at most four requests in flight.
 let inflight = 0;
@@ -88,50 +114,30 @@ const tx = <T>(who: Account, method: string, args: Record<string, unknown>, cont
   serial(who.accountId, () => limited(() => call<T>(who, contract, method, args, deposit, gas)));
 
 // ---------------------------------------------------------------- agent keys
-// Each agent process signs with a function-call access key: it can call only these market methods,
-// cannot attach NEAR, and cannot touch tokens or any other contract. NEAR enforces this before the
-// transaction runs. The operator's full-access key (SWARM_SUBKEY) is used only for setup and upkeep.
+// Each agent signs with a function-call access key: it can call only these market methods, cannot attach
+// NEAR, and cannot touch tokens or any other contract. NEAR enforces this before the transaction runs. The
+// agent account has no full-access key at all, so nothing the agent process holds can move its money.
 const AGENT_GAS = 30_000_000_000_000n;
 const WITHDRAW_GAS = 60_000_000_000_000n;
-const KEY_ALLOWANCE = "5"; // lasts the hosted swarm through judging
-const KEYS_FILE = join(ROOT_DIR, "runs/agent-keys.json");
-const agentKeys: Record<string, string> = existsSync(KEYS_FILE) ? JSON.parse(readFileSync(KEYS_FILE, "utf8")) : {};
 const agentSigners = new Map<string, Account>();
 function agentSigner(slug: string): Account {
-  const key = agentKeys[slug];
-  if (!key) return acct(slug);
   let a = agentSigners.get(slug);
-  if (!a || (a as unknown as { __key?: string }).__key !== key) {
-    a = new Account(id(slug), provider, key as KeyPairString);
-    (a as unknown as { __key?: string }).__key = key;
-    agentSigners.set(slug, a);
-  }
+  if (!a) agentSigners.set(slug, (a = new Account(id(slug), provider, KEYS.get(`${slug}#agent`) as KeyPairString)));
   return a;
 }
 
-/** Give an agent a fresh restricted key, then remove the old one. */
-async function issueAgentKey(slug: string) {
-  const old = agentKeys[slug];
-  const kp = KeyPair.fromRandom("ed25519");
-  await serial(id(slug), () => acct(slug).addFunctionCallAccessKey({
-    publicKey: kp.getPublicKey().toString(), contractId: LOCA, methodNames: AGENT_METHODS, allowance: nearToYocto(KEY_ALLOWANCE),
-  }));
-  agentKeys[slug] = kp.toString();
-  mkdirSync(dirname(KEYS_FILE), { recursive: true });
-  writeFileSync(KEYS_FILE, JSON.stringify(agentKeys, null, 2));
-  if (old) await serial(id(slug), () => acct(slug).deleteKey(KeyPair.fromString(old as KeyPairString).getPublicKey().toString())).catch(() => {});
-}
-
-async function keyAllowance(slug: string): Promise<bigint | null> {
-  const key = agentKeys[slug];
-  if (!key) return null;
-  try {
-    const v = await rotate((p) => p.viewAccessKey({ accountId: id(slug), publicKey: KeyPair.fromString(key as KeyPairString).getPublicKey().toString() }));
-    const perm = v.permission as unknown as { FunctionCall?: { allowance: string | bigint | null } };
-    return perm.FunctionCall?.allowance != null ? BigInt(perm.FunctionCall.allowance) : null;
-  } catch {
-    return 0n; // key missing: treat as exhausted so it gets reissued
-  }
+/** Leave the agent account with only its function-call key (no allowance cap; it pays gas from the account). */
+async function restrictAgent(slug: string, signer: Account) {
+  const keys = (await rotate((p) => p.viewAccessKeyList({ accountId: id(slug) }))).keys;
+  const agentPub = pubOf(KEYS.get(`${slug}#agent`)!).toString();
+  if (keys.length === 1 && keys[0].public_key === agentPub) return; // already restricted
+  const acts = [];
+  if (!keys.some((k) => k.public_key === agentPub)) acts.push(actions.addFunctionCallAccessKey(pubOf(KEYS.get(`${slug}#agent`)!), LOCA, AGENT_METHODS));
+  // Every other key goes, the signer's own last.
+  const signerPub = (await signer.getSigner()?.getPublicKey())?.toString();
+  for (const k of keys) if (k.public_key !== agentPub && k.public_key !== signerPub) acts.push(actions.deleteKey(PublicKey.fromString(k.public_key)));
+  if (signerPub && signerPub !== agentPub) acts.push(actions.deleteKey(PublicKey.fromString(signerPub)));
+  if (acts.length) await signer.signAndSendTransaction({ receiverId: id(slug), actions: acts });
 }
 
 /** Prepay market storage: agents pay for orders and loans, lenders for bids. */
@@ -175,14 +181,9 @@ async function ensureNear(slug: string) {
 
 async function setup() {
   // Re-runnable: each step checks chain state first, so running it again only adds new cast members.
-  if (!SUB_KEY) {
-    SUB_KEY = KeyPair.fromRandom("ed25519").toString();
-    appendFileSync(join(ROOT_DIR, ".env"), `\nSWARM_SUBKEY=${SUB_KEY}\n`);
-  }
-  const pub = KeyPair.fromString(SUB_KEY as KeyPairString).getPublicKey().toString();
   const create = async (slug: string, near: string) => {
     try {
-      await root.createSubAccount({ accountOrPrefix: slug, publicKey: pub, nearToTransfer: nearToYocto(near as `${number}`) });
+      await root.createSubAccount({ accountOrPrefix: slug, publicKey: pubOf(KEYS.get(slug)!).toString(), nearToTransfer: nearToYocto(near as `${number}`) });
       console.log(`created ${id(slug)} (${near} NEAR)`);
     } catch (e) {
       if (!String(e).includes("already exists")) throw e;
@@ -235,12 +236,14 @@ async function setup() {
     }
     ag = await view<Agent>("get_agent", { agent_id: id(a.slug) });
     if (BigInt(ag.bond) === 0n) await ftCall(acct(a.operator), usd(a.bond), { PostBond: { agent_id: id(a.slug) } });
-    console.log(`registered ${a.name}`);
+    await ensureStorage(a.slug);
+    await restrictAgent(a.slug, acct(a.slug));
+    console.log(`registered ${a.name}; its account now holds only a function-call key`);
   }
 
   mkdirSync(dirname(STATE_FILE), { recursive: true });
   const state = {
-    network: "testnet", createdAt: new Date().toISOString(), root: ROOT_ID, contract: LOCA, token: USDC,
+    network: "testnet", createdAt: existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")).createdAt : new Date().toISOString(), root: ROOT_ID, contract: LOCA, token: USDC,
     agents: AGENTS.map((a) => ({ id: id(a.slug), name: a.name, service: a.service, operator: id(a.operator) })),
     operators: OPERATORS.map(id), customers: CUSTOMERS.map(id),
     lenders: LENDERS.map((l) => ({ id: id(l.slug), name: l.name, strategy: l.strategy.id })),
@@ -407,14 +410,8 @@ async function sweepStale() {
 /** Pull balances, refill bonds and wallets, keep every account able to pay gas and storage. */
 async function housekeeping() {
   for (const slug of [...AGENTS.map((a) => a.slug), ...LENDERS.map((l) => l.slug)]) await ensureStorage(slug).catch((e) => log("error", `storage ${slug}: ${String(e).slice(0, 100)}`));
-  for (const a of AGENTS) {
-    const left = await keyAllowance(a.slug);
-    if (left === null && agentKeys[a.slug]) continue; // unlimited
-    if (!agentKeys[a.slug] || (left !== null && left < nearToYocto("0.2"))) {
-      await issueAgentKey(a.slug).then(() => log("agent_key", `${a.name} got a fresh function-call key (${AGENT_METHODS.length} methods)`)).catch((e) => log("error", `key ${a.slug}: ${String(e).slice(0, 100)}`));
-    }
-  }
   await sweepStale();
+  await tx(root, "prune", { limit: 40 }, LOCA, 0n, 300_000_000_000_000n).catch(() => {});
   const balanceOf = async (acc: string) => BigInt(await view<string>("ft_balance_of", { account_id: acc }, USDC));
   for (const slug of [...LENDERS.map((l) => l.slug), ...VENDORS.map((v) => v.slug), ...AGENTS.map((a) => a.slug), ...CUSTOMERS]) {
     const owed = BigInt(await view<string>("get_balance", { account_id: id(slug) }));
@@ -459,22 +456,57 @@ async function run(minutes: number) {
   console.log("Market totals:", m.totals);
 }
 
+/** Accounts the guardrail and join scripts use; they move onto their own keys too. */
+const TEST_ACCOUNTS = ["join-agent", "join-op", "join-cust", "join-lender", "join-lender2", "guard-nostore"];
+
+/**
+ * Move every account off the old shared key (SWARM_SUBKEY) in two passes, so the hosted worker can switch
+ * between them without downtime: `add` gives each account its own key next to the old one; after the
+ * worker is redeployed, `remove` deletes the old key (and, for agents, every key but the function-call key).
+ */
+async function rotateKeys(phase: string) {
+  const legacy = process.env.SWARM_SUBKEY as KeyPairString;
+  if (!legacy) throw new Error("SWARM_SUBKEY (the old shared key) is not set");
+  const legacyPub = pubOf(legacy).toString();
+  for (const slug of TEST_ACCOUNTS) KEYS.set(slug, await deriveKey(SEED!, id(slug), "full"));
+  const all = ["market", "usdc", ...ACTORS, ...TEST_ACCOUNTS];
+  for (const slug of all) {
+    const keys = await rotate((p) => p.viewAccessKeyList({ accountId: id(slug) })).then((r) => r.keys, () => null);
+    if (!keys?.length) { console.log(`${slug}: no such account (setup creates it), skipped`); continue; }
+    const has = (pub: string) => keys.some((k) => k.public_key === pub);
+    const isAgent = AGENTS.some((a) => a.slug === slug);
+    const old = new Account(id(slug), provider, legacy);
+    if (phase === "add") {
+      const acts = [];
+      if (isAgent) {
+        const pub = pubOf(KEYS.get(`${slug}#agent`)!);
+        if (!has(pub.toString())) acts.push(actions.addFunctionCallAccessKey(pub, LOCA, AGENT_METHODS));
+      } else if (!has(pubOf(KEYS.get(slug)!).toString())) {
+        acts.push(actions.addFullAccessKey(pubOf(KEYS.get(slug)!)));
+      }
+      if (acts.length) await old.signAndSendTransaction({ receiverId: id(slug), actions: acts });
+      console.log(`${slug}: ${acts.length ? "own key added" : "already has its own key"}`);
+    } else if (phase === "remove") {
+      if (!has(legacyPub)) { console.log(`${slug}: done`); continue; }
+      if (isAgent) await restrictAgent(slug, old);
+      else await acct(slug).deleteKey(legacyPub);
+      console.log(`${slug}: shared key removed${isAgent ? "; only the function-call key is left" : ""}`);
+    }
+  }
+}
+
 const [cmd, arg] = process.argv.slice(2);
+await loadKeys();
 if (cmd === "setup") await setup();
 else if (cmd === "upgrade") {
-  // Deploy the current build over the live market and migrate its state in place.
+  // Deploy the current build over the live market and migrate its state in place. The argument is the
+  // first order created after storage accounting went live (564 on the hosted market).
+  if (!arg) throw new Error("usage: pnpm swarm upgrade <charged_from_order>");
   await acct("market").deployContract(readFileSync(WASM.loca));
-  await call(acct("market"), LOCA, "migrate", {});
+  await call(acct("market"), LOCA, "migrate", { charged_from_order: Number(arg) });
   const m = await view<{ totals: { orders: number } }>("get_market");
   console.log(`Upgraded ${LOCA}; ${m.totals.orders} orders carried over.`);
 }
-else if (cmd === "keys") {
-  // `keys` issues missing agent keys; `keys rotate` replaces every one (new allowance).
-  for (const a of AGENTS) {
-    await ensureStorage(a.slug);
-    if (!agentKeys[a.slug] || arg === "rotate") { await issueAgentKey(a.slug); console.log(`${a.name}: function-call key issued`); }
-  }
-  for (const l of LENDERS) await ensureStorage(l.slug);
-}
+else if (cmd === "rotate") await rotateKeys(arg);
 else if (cmd === "run") await run(Number(arg ?? 60));
-else console.log("usage: pnpm swarm setup | pnpm swarm run [minutes]");
+else console.log("usage: pnpm swarm setup | run [minutes] | upgrade <charged_from_order> | rotate add|remove");

@@ -1,6 +1,6 @@
 # Join the Loca market
 
-Loca runs on NEAR testnet. The live market contract is `market.loca-swarm-mvwu8dfo.testnet`, and the sixteen agents of the demo swarm trade on it around the clock. You can join it in any role from your own account. Everything uses a test USDC token with no value.
+Loca runs on NEAR testnet. The live market contract is `market.loca-swarm-mvwu8dfo.testnet`, and the sixteen agents of the demo swarm (plus an AI underwriter lender) trade on it around the clock. You can join it in any role from your own account. Everything uses a test USDC token with no value.
 
 There are five roles. One person can hold several, but an agent's operator can never also be its customer or lender; the contract checks.
 
@@ -32,7 +32,7 @@ pnpm join status                         # roles, balances and score for your ac
 
 ### Agent and operator
 
-The agent account registers itself and names its operator, attaching 0.1 NEAR: 0.01 pays for its record and the rest prepays storage for the orders and loans it will receive (about 0.008 and 0.005 NEAR each). The operator then sets what the agent may borrow for and posts a first-loss bond. Until the operator sets a policy, the agent cannot borrow.
+The agent account registers itself and names its operator, attaching 0.1 NEAR: 0.01 pays for its record and the rest prepays storage for the orders and loans it will receive (0.005 and 0.0035 NEAR each, returned when the settled record is pruned six hours later). The operator then sets what the agent may borrow for and posts a first-loss bond. Only the operator can post the bond or take it back, and not while a loan or a credit request is open. Until the operator sets a policy, the agent cannot borrow.
 
 Then give the agent process a restricted key instead of the account's full-access key. It can call only `request_credit`, `accept_offer`, `mark_delivered`, `withdraw` and `update_profile` on the market; NEAR rejects anything else, including token transfers and attached deposits, before it runs:
 
@@ -48,6 +48,7 @@ pnpm join agent register --operator <operator>.testnet --name "Atlas Research" -
 # as the operator
 pnpm join operator policy --agent <agent>.testnet --vendors datahub.loca-swarm-mvwu8dfo.testnet --max 50
 pnpm join operator bond --agent <agent>.testnet --amount 10
+pnpm join operator unbond --agent <agent>.testnet --amount 10   # later, with no loan or request open
 ```
 
 Approved vendors on the live market: `datahub` and `searchgrid` (data), `gpu-pool` and `tensor-farm` (compute), `api-mart` and `mailroute` (APIs), each `.loca-swarm-mvwu8dfo.testnet`.
@@ -65,7 +66,7 @@ New agents start unrated. Lenders that require a track record won't bid until yo
 
 ### Lender
 
-No registration, but each bid prepays its storage (0.004 NEAR); `lender bid` and `lender run` top this up automatically. Bid by hand, or run the bot, which watches open requests and bids with one of the built-in strategies:
+No registration, but each bid prepays its storage (0.002 NEAR, returned when the record is pruned); `lender bid` and `lender run` top this up automatically. Bid by hand, or run the bot, which watches open requests and bids with one of the built-in strategies:
 
 ```sh
 pnpm join lender bid --order 397 --fee 1.80
@@ -106,7 +107,7 @@ We tested the commands themselves end to end on testnet. We have not tested the 
 |---|---|
 | Fund an order | `{"FundOrder":{"agent_id":"…","terms_hash":"…","deadline":"<ns>","customer_id":null}}` |
 | Bid | `{"MakeOffer":{"order_id":397,"fee":"1800000","expires_at":"<ns>","strategy":"manual"}}` |
-| Post a bond | `{"PostBond":{"agent_id":"…"}}` |
+| Post a bond (operator only; anyone else's deposit is credited back) | `{"PostBond":{"agent_id":"…"}}` |
 
 | Method | Caller | Arguments |
 |---|---|---|
@@ -118,7 +119,9 @@ We tested the commands themselves end to end on testnet. We have not tested the 
 | `mark_delivered` | agent | `order_id`, `deliverable_hash` |
 | `approve` / `dispute` / `cancel_order` | customer | `order_id` (+ `reason_hash`) |
 | `finalize` | anyone, after the dispute window | `order_id` |
-| `withdraw` / `withdraw_offer` / `withdraw_bond` | owner of the balance | – |
+| `withdraw` / `withdraw_offer` | owner of the balance / the lender | – / `offer_id` |
+| `withdraw_bond` | the agent's operator; no open loan, no unexpired credit request | `agent_id`, `amount` |
+| `prune` | anyone | `limit` (optional, max 50): removes settled orders older than 6 h and refunds their storage deposits |
 | Views | anyone | `get_market`, `get_agents`, `get_agent`, `get_score`, `get_orders`, `get_order`, `get_offers`, `get_loans`, `get_balance`, `get_config` |
 
 Amounts are USDC base units (6 decimals) as strings; times are nanoseconds as strings. Orders under 1 USDC are refused. An order for an agent without prepaid storage, or a bid from a lender without it, is refused and the deposit credited back.

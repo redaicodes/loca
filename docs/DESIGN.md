@@ -68,9 +68,20 @@ Verified: 1Click's `customRecipientMsg` makes it withdraw with `ft_transfer_call
 
 1Click only quotes to recipients that exist on mainnet.
 
-## 7. Scope cuts
+## 7. Changes after an outside review (2026-11-05)
 
-The registry, escrow and credit market are one contract. Out of scope: Chain Signatures, volatile collateral, partial fills and revolving facilities. The seven lender agents run three demo strategies, each with its own spread, on an open market; they are not presented as independent competition.
+A cold review of the public repo (fresh clone, README steps only) found four real problems. All four are fixed and covered by tests.
+
+- **The bond belonged to nobody in particular.** `withdraw_bond` paid the agent and only checked for open loans, so an agent could take its operator's bond, or the bond could be pulled after lenders had priced bids on it but before a loan existed. Now only the operator can post a bond (anyone else's deposit is credited back), only the operator can withdraw it, the money goes back to the operator, and `request_credit` locks the bond until that request expires. Tests: `agent_cannot_take_operators_bond`, `bond_locked_while_lenders_may_bid_on_it`, `bond_returns_to_operator_after_lock_expires`, `only_the_operator_can_post_a_bond`.
+- **One key ran the whole swarm.** Every swarm account, including the market contract, shared one full-access key, so the function-call-key story held only for the agent process, not the accounts. Now each account has its own key derived from a seed (`src/swarm/keys.ts`), agent accounts hold only their function-call key (no full-access key at all), and the market and token keys stay with the deployer, not the hosted worker.
+- **State grew without bound, and the swarm topped up from the faucet.** Each order, bid and loan stayed in state forever, so the swarm's root paid roughly 45 testnet NEAR a day in storage and refilled from the faucet by creating and deleting throwaway accounts. Now `prune` (permissionless) removes settled orders older than six hours with their bids and loan, and returns the storage deposit to whoever paid it. Prices were cut to just above measured record sizes. Scores and market totals are kept in agent stats and `totals`, so pruning changes neither. The faucet code is gone.
+- **The agents were all rules.** Seven lenders run fixed strategies. An eighth, the AI underwriter (`src/agents/underwriter.ts`), sends the same public record to a model on NEAR AI Cloud and bids with its answer. Replies that are malformed, outside 0.5–20% or above the borrower's cap are dropped, and the model's one-line reason is stored on chain in the offer's `strategy` field.
+
+The upgrade was rehearsed on a local node before it touched testnet (`scripts/upgrade-rehearsal.ts`): deploy the previous build, trade on it, upgrade and `migrate`, then check that totals, agent records, scores, balances and open escrow survived and that the new rules hold on the migrated state.
+
+## 8. Scope cuts
+
+The registry, escrow and credit market are one contract. Out of scope: Chain Signatures, volatile collateral, partial fills and revolving facilities. The seven rule-based lender agents run three demo strategies, each with its own spread, on an open market; they are not presented as independent competition.
 
 ## Build plan
 
@@ -84,9 +95,10 @@ The registry, escrow and credit market are one contract. Out of scope: Chain Sig
 | Testnet run (`pnpm demo:testnet`) | done: `lmvwp2jlc-loca.loca-mvwp1z4g.testnet`, log in docs/testnet-run.json |
 | Intents adapter: asset list, dry quote, status polling, failure paths | done; live dry quotes in docs/intents-quotes.json |
 | Dashboard (style below), reads run log + live contract views | done |
-| Demo video, X post, submission | Nov 12–14 |
+| Demo video, X post, submission | done (submitted 2026-11-02) |
+| Review fixes: bond ownership and lock, per-account keys, pruning with storage refunds, AI underwriter, CI | done (35 Rust, 16 TS tests) |
 
-Mainnet note: near-sdk 5.30 wasm imports nearcore 2.14 host functions. Testnet is on protocol 88, mainnet was on protocol 86 on 2026-10-31. A mainnet deploy would need an older near-sdk or a wait for mainnet to upgrade.
+Mainnet note: near-sdk 5.30 wasm imports nearcore 2.14 host functions. Testnet is on protocol 88, mainnet was on protocol 87 on 2026-11-05. A mainnet deploy would need an older near-sdk or a wait for mainnet to upgrade.
 
 ## UI style
 

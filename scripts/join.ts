@@ -39,6 +39,7 @@ Agent (the account that borrows and delivers work)
 Operator (the human or company accountable for an agent)
   operator policy --agent <id> --vendors <id,id> --max 50
   operator bond --agent <id> --amount 10   first-loss bond, covers lenders before anyone else
+  operator unbond --agent <id> --amount 10 take the bond back (no open loan, no open credit request)
 
 Lender
   lender bid --order <id> --fee 1.20 [--minutes 5] [--strategy manual]
@@ -232,6 +233,7 @@ async function main() {
         agent_id: flag("agent"), allowed_vendors: flag("vendors").split(",").map((v) => v.trim()), max_principal: usd(Number(flag("max"))).toString(),
       }));
     case "operator bond": return void (await ftCall(usd(Number(flag("amount"))), { PostBond: { agent_id: flag("agent") } }));
+    case "operator unbond": return void (await tx("withdraw_bond", { agent_id: flag("agent"), amount: usd(Number(flag("amount"))).toString() }));
 
     case "lender bid": {
       const order = await view<Order>("get_order", { order_id: Number(flag("order")) });
