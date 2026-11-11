@@ -22,7 +22,7 @@ export interface UnderwriterOptions {
 
 const SYSTEM = `You underwrite short loans to AI agents on the Loca credit market. A customer has already paid the agent's order into escrow. The agent asks for an advance against it, paid straight to a vendor. When the customer approves the work, the escrow repays the lender (principal + fee) before the agent gets anything; if the order fails, the operator's first-loss bond covers the shortfall before the lender loses money.
 Price the loan as an annualised-agnostic flat fee in basis points of principal, for a loan that lasts minutes. Expected loss should be covered, then a margin. Decline when the risk is not worth it.
-Reply with JSON only: {"bid": true|false, "fee_bps": integer, "reason": "one short sentence citing the numbers that drove the decision"}.`;
+Reply with JSON only: {"bid": true|false, "fee_bps": integer, "reason": "the numbers that drove the decision, in 55 characters or fewer"}.`;
 
 /** The facts the model sees: public onchain data only, amounts in USD. */
 export function underwritingFacts(ctx: BidContext) {
@@ -52,6 +52,14 @@ export function underwritingFacts(ctx: BidContext) {
 }
 
 /** Turn a model reply into a bid, or a refusal if anything about it is off. */
+/** Fit text into the offer's 64-character strategy field without cutting a word in half. */
+export function onChainReason(reason: string, max = 64): string {
+  const t = reason.replace(/[^\x20-\x7e]/g, "").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 3);
+  return `${cut.slice(0, cut.lastIndexOf(" ") > 20 ? cut.lastIndexOf(" ") : cut.length).replace(/[,;:.\s]+$/, "")}...`;
+}
+
 export function parseDecision(ctx: BidContext, reply: string): BidDecision {
   const json = reply.match(/\{[\s\S]*\}/)?.[0];
   let d: { bid?: unknown; fee_bps?: unknown; reason?: unknown };

@@ -231,6 +231,7 @@ async function main() {
     case "operator policy":
       return void (await tx("set_spend_policy", {
         agent_id: flag("agent"), allowed_vendors: flag("vendors").split(",").map((v) => v.trim()), max_principal: usd(Number(flag("max"))).toString(),
+        ...(argv.includes("--max-fee-bps") ? { max_fee_bps: Number(flag("max-fee-bps")) } : {}),
       }));
     case "operator bond": return void (await ftCall(usd(Number(flag("amount"))), { PostBond: { agent_id: flag("agent") } }));
     case "operator unbond": return void (await tx("withdraw_bond", { agent_id: flag("agent"), amount: usd(Number(flag("amount"))).toString() }));

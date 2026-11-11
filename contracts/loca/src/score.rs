@@ -6,6 +6,10 @@ use near_sdk::{near, AccountId};
 
 pub const SCORE_VERSION: &str = "v0";
 const FULL: u128 = 10_000;
+/// Completed-order volume (USDC, 6 decimals) at which the volume part of revenue continuity is full.
+const FULL_VOLUME: u128 = 1_000_000_000;
+/// An agent needs this much completed volume, as well as orders from two customers, to be rated.
+pub const RATED_MIN_VOLUME: u128 = 50_000_000;
 
 #[near(serializers = [json])]
 #[derive(Clone, Debug, PartialEq)]
@@ -42,7 +46,9 @@ pub fn compute(agent: &Agent) -> ScoreReport {
     let unique = s.unique_customers as u128;
     let mut codes: Vec<String> = Vec::new();
 
-    let revenue = ratio(completed.min(10), 10) / 2 + ratio(unique.min(5), 5) / 2;
+    // Count, customers and dollar volume each carry a third, so a pile of $1 orders builds little.
+    let volume = s.revenue.0;
+    let revenue = (ratio(completed.min(10), 10) + ratio(unique.min(5), 5) + ratio(volume.min(FULL_VOLUME), FULL_VOLUME)) / 3;
 
     let closed = (s.loans_repaid + s.loans_repaid_with_bond + s.loans_defaulted) as u128;
     let repayment = if closed == 0 {
@@ -80,7 +86,7 @@ pub fn compute(agent: &Agent) -> ScoreReport {
         codes.push("CUSTOMER_CONCENTRATION".into());
     }
 
-    let rated = s.orders_completed >= 3 && s.unique_customers >= 2;
+    let rated = s.orders_completed >= 3 && s.unique_customers >= 2 && volume >= RATED_MIN_VOLUME;
     if !rated {
         codes.push("UNRATED_INSUFFICIENT_HISTORY".into());
     }

@@ -142,6 +142,7 @@ pub struct Config {
     pub dispute_window_ns: U64,
     pub max_advance_bps: u16,
     pub approved_vendors: Vec<AccountId>,
+    pub forwarders: Vec<AccountId>,
 }
 
 /// `msg` payload for `ft_transfer_call` into the LOCA contract.

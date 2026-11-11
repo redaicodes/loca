@@ -19,22 +19,23 @@ struct World {
     deposited: u128,
 }
 
-const ACCOUNTS: [&str; 10] = [
+const ACCOUNTS: [&str; 11] = [
     "agent.near", "operator.near", "customer.near", "customer2.near", "customer3.near",
-    "lender1.near", "lender2.near", "lender3.near", "vendor.near", "evil-vendor.near",
+    "lender1.near", "lender2.near", "lender3.near", "vendor.near", "evil-vendor.near", "mallory.near",
 ];
 
 impl World {
     fn new() -> Self {
         let mut w = World { c: unsafe_init(), t: T0, deposited: 0 };
         w.as_("owner.near").c.add_vendor(acc("vendor.near"));
+        w.as_("owner.near").c.set_forwarders(vec![acc("intents.near")]);
         w.pay("agent.near", NEAR).c.register_agent(acc("operator.near"), "profile-hash".into());
         for l in ["lender1.near", "lender2.near", "lender3.near", "customer.near", "customer2.near", "customer3.near"] {
             w.pay(l, NEAR).c.storage_deposit(None);
         }
         w.as_("operator.near")
             .c
-            .set_spend_policy(acc("agent.near"), vec![acc("vendor.near")], U128(usd(50)));
+            .set_spend_policy(acc("agent.near"), vec![acc("vendor.near")], U128(usd(50)), None);
         w
     }
 
@@ -263,7 +264,7 @@ fn vendor_must_be_protocol_approved() {
     let mut w = World::new();
     w.as_("operator.near")
         .c
-        .set_spend_policy(acc("agent.near"), vec![acc("evil-vendor.near")], U128(usd(50)));
+        .set_spend_policy(acc("agent.near"), vec![acc("evil-vendor.near")], U128(usd(50)), None);
     let order = w.fund_order("customer.near", usd(100));
     let exp = U64(w.t + 60 * SEC);
     w.as_("agent.near").c.request_credit(order, U128(usd(30)), acc("evil-vendor.near"), U128(usd(1)), exp);
@@ -275,7 +276,7 @@ fn agent_cannot_change_own_policy() {
     let mut w = World::new();
     w.as_("agent.near")
         .c
-        .set_spend_policy(acc("agent.near"), vec![acc("vendor.near")], U128(usd(1_000)));
+        .set_spend_policy(acc("agent.near"), vec![acc("vendor.near")], U128(usd(1_000)), None);
 }
 
 #[test]
@@ -625,7 +626,7 @@ fn register_requires_storage() {
 fn policy_vendor_list_is_bounded() {
     let mut w = World::new();
     let vendors: Vec<AccountId> = (0..11).map(|i| acc(&format!("v{i}.near"))).collect();
-    w.as_("operator.near").c.set_spend_policy(acc("agent.near"), vendors, U128(usd(50)));
+    w.as_("operator.near").c.set_spend_policy(acc("agent.near"), vendors, U128(usd(50)), None);
 }
 
 #[test]
@@ -644,4 +645,155 @@ fn storage_prices_cover_the_records_they_pay_for() {
     assert!(STORAGE_ORDER >= order_bytes, "order {order_bytes}");
     assert!(STORAGE_OFFER >= offer_bytes, "offer {offer_bytes}");
     assert!(STORAGE_LOAN >= loan_bytes, "loan {loan_bytes}");
+}
+
+// ---------- second outside review (2026-11-11) ----------
+
+#[test]
+fn nobody_but_a_forwarder_funds_in_someone_elses_name() {
+    let mut w = World::new();
+    // An operator inventing customers to farm its agent's score.
+    w.ft("mallory.near", usd(10), json!({ "FundOrder": { "agent_id": "agent.near", "terms_hash": "t",
+        "deadline": U64(w.t + 3_600 * SEC), "customer_id": "made-up.near" } }));
+    assert!(w.c.get_order(0).is_none());
+    assert_eq!(w.bal("mallory.near"), usd(10), "credited back to the real sender");
+    w.assert_conserved();
+}
+
+#[test]
+fn nobody_but_a_forwarder_bids_in_someone_elses_name() {
+    let mut w = World::new();
+    let order = w.fund_order("customer.near", usd(100));
+    w.request(order, usd(30), usd(3));
+    w.ft("mallory.near", usd(30), json!({ "MakeOffer": { "order_id": order, "fee": U128(usd(1)),
+        "expires_at": U64(w.t + 300 * SEC), "strategy": "x", "lender_id": "lender1.near" } }));
+    assert!(w.c.get_offers(order).is_empty());
+    assert_eq!(w.bal("mallory.near"), usd(30));
+    w.assert_conserved();
+}
+
+#[test]
+#[should_panic(expected = "ERR_FEE_ABOVE_POLICY")]
+fn agent_cannot_request_a_fee_above_its_operators_cap() {
+    let mut w = World::new();
+    let order = w.fund_order("customer.near", usd(100));
+    // A stolen key asking for a $50 advance with a $50 fee to a lender it controls.
+    w.request(order, usd(30), usd(4)); // 13% > the 10% default
+}
+
+#[test]
+fn operator_sets_the_fee_cap_within_the_protocol_ceiling() {
+    let mut w = World::new();
+    w.as_("operator.near").c.set_spend_policy(acc("agent.near"), vec![acc("vendor.near")], U128(usd(50)), Some(1_500));
+    assert_eq!(w.c.get_fee_cap(acc("agent.near")), 1_500);
+    let order = w.fund_order("customer.near", usd(100));
+    w.request(order, usd(30), usd(4)); // 13%: allowed now
+    let o = w.offer("lender1.near", order, usd(30), usd(4));
+    // The operator tightens the cap before the agent accepts: the loan is refused.
+    w.as_("operator.near").c.set_spend_policy(acc("agent.near"), vec![acc("vendor.near")], U128(usd(50)), Some(500));
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.as_("agent.near").c.accept_offer(o)));
+    assert!(r.is_err());
+}
+
+#[test]
+#[should_panic(expected = "ERR_FEE_CAP_TOO_HIGH")]
+fn fee_cap_cannot_exceed_the_protocol_ceiling() {
+    let mut w = World::new();
+    w.as_("operator.near").c.set_spend_policy(acc("agent.near"), vec![acc("vendor.near")], U128(usd(50)), Some(2_001));
+}
+
+#[test]
+#[should_panic(expected = "ERR_EXPIRY_TOO_FAR")]
+fn credit_request_cannot_lock_the_bond_for_long() {
+    let mut w = World::new();
+    let id = w.c.next_order_id;
+    w.ft("customer.near", usd(100), json!({ "FundOrder": { "agent_id": "agent.near", "terms_hash": "t", "deadline": U64(w.t + 48 * 3_600 * SEC) } }));
+    let far = U64(w.t + 2 * 3_600 * SEC);
+    w.as_("agent.near").c.request_credit(id, U128(usd(30)), acc("vendor.near"), U128(usd(3)), far);
+}
+
+#[test]
+fn anyone_cancels_an_abandoned_order_after_the_grace_period() {
+    let mut w = World::new();
+    let order = w.fund_order("customer.near", usd(100));
+    w.request(order, usd(30), usd(3));
+    let o = w.offer("lender1.near", order, usd(30), usd(1));
+    w.as_("agent.near").c.accept_offer(o);
+    w.t += 3_601 * SEC;
+    let early = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.as_("keeper.near").c.cancel_order(order)));
+    assert!(early.is_err(), "inside the grace period only the customer may cancel");
+    w.t += CANCEL_GRACE_NS;
+    w.as_("keeper.near").c.cancel_order(order);
+    assert_eq!(w.bal("customer.near"), usd(100), "the refund still goes to the customer");
+    assert_eq!(w.c.get_loan(0).unwrap().status, LoanStatus::Defaulted);
+    w.assert_conserved();
+}
+
+#[test]
+fn unruled_dispute_refunds_the_customer_after_the_arbiter_timeout() {
+    let mut w = World::new();
+    let order = w.fund_order("customer.near", usd(100));
+    w.as_("agent.near").c.mark_delivered(order, "r".into());
+    w.as_("customer.near").c.dispute(order, "bad".into());
+    let early = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.as_("keeper.near").c.expire_dispute(order)));
+    assert!(early.is_err());
+    w.t += 601 * SEC + ARBITER_TIMEOUT_NS;
+    w.as_("keeper.near").c.expire_dispute(order);
+    assert_eq!(w.c.get_order(order).unwrap().status, OrderStatus::Refunded);
+    assert_eq!(w.bal("customer.near"), usd(100));
+    w.assert_conserved();
+}
+
+#[test]
+fn withdrawn_and_expired_bids_free_their_slots() {
+    let mut w = World::new();
+    let order = w.fund_order("customer.near", usd(100));
+    w.request(order, usd(30), usd(3));
+    // A griefer fills the order with bids and withdraws them all.
+    for _ in 0..10 {
+        let o = w.offer("lender2.near", order, usd(30), usd(3));
+        w.as_("lender2.near").c.withdraw_offer(o);
+    }
+    assert!(w.c.get_order(order).unwrap().offer_ids.is_empty());
+    // Then fills it with short bids that lapse.
+    for _ in 0..10 {
+        let id = w.c.next_offer_id;
+        w.ft("lender2.near", usd(30), json!({ "MakeOffer": { "order_id": order, "fee": U128(usd(3)), "expires_at": U64(w.t + 2 * SEC), "strategy": "g" } }));
+        assert!(w.c.get_offer(id).is_some());
+    }
+    w.t += 3 * SEC;
+    let real = w.offer("lender1.near", order, usd(30), usd(1));
+    assert_eq!(w.c.get_offer(real).unwrap().status, OfferStatus::Open, "a live bid still gets in");
+    assert_eq!(w.c.get_order(order).unwrap().offer_ids, vec![real]);
+    assert_eq!(w.bal("lender2.near"), usd(600), "every griefing deposit came back");
+    w.as_("agent.near").c.accept_offer(real);
+    w.assert_conserved();
+}
+
+#[test]
+fn prune_orders_removes_orders_that_settled_after_the_cursor_passed() {
+    let mut w = World::new();
+    let late = w.fund_order("customer.near", usd(100));
+    w.t += PRUNE_AFTER_NS + SEC;
+    assert_eq!(w.as_("anyone.near").c.prune(None), 0);
+    assert_eq!(w.c.get_market().prune_cursor, late + 1, "cursor passed the open order");
+    w.as_("customer.near").c.cancel_order(late);
+    assert_eq!(w.as_("anyone.near").c.prune(None), 0);
+    assert_eq!(w.as_("anyone.near").c.prune_orders(vec![late, 99]), 1);
+    assert!(w.c.get_order(late).is_none());
+    assert_eq!(w.c.get_market().orders_pruned, 1);
+    w.assert_conserved();
+}
+
+#[test]
+fn dollar_orders_do_not_make_an_agent_rated() {
+    let mut w = World::new();
+    for c in ["customer.near", "customer2.near", "customer3.near", "customer.near", "customer2.near"] {
+        let o = w.fund_order(c, usd(1));
+        w.as_("agent.near").c.mark_delivered(o, "d".into());
+        w.as_(c).c.approve(o);
+    }
+    let r = w.c.get_score(acc("agent.near")).unwrap();
+    assert!(!r.rated, "five $1 orders are not a track record");
+    w.assert_conserved();
 }

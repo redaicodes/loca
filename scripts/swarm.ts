@@ -502,14 +502,13 @@ const [cmd, arg] = process.argv.slice(2);
 await loadKeys();
 if (cmd === "setup") await setup();
 else if (cmd === "upgrade") {
-  // Deploy the current build over the live market and migrate its state in place. The argument is the
-  // first order created after storage accounting went live (564 on the hosted market).
-  if (!arg) throw new Error("usage: pnpm swarm upgrade <charged_from_order>");
+  // Deploy the current build over the live market and migrate its state in place. The argument lists
+  // the forwarders allowed to deposit for someone else (none on testnet: NEAR Intents is mainnet only).
   await acct("market").deployContract(readFileSync(WASM.loca));
-  await call(acct("market"), LOCA, "migrate", { charged_from_order: Number(arg) });
+  await call(acct("market"), LOCA, "migrate", { forwarders: arg ? arg.split(",") : [] });
   const m = await view<{ totals: { orders: number } }>("get_market");
   console.log(`Upgraded ${LOCA}; ${m.totals.orders} orders carried over.`);
 }
 else if (cmd === "rotate") await rotateKeys(arg);
 else if (cmd === "run") await run(Number(arg ?? 60));
-else console.log("usage: pnpm swarm setup | run [minutes] | upgrade <charged_from_order> | rotate add|remove");
+else console.log("usage: pnpm swarm setup | run [minutes] | upgrade [forwarders] | rotate add|remove");

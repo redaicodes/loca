@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BidContext } from "../src/agents/lenders.js";
-import { parseDecision, underwrite, underwritingFacts } from "../src/agents/underwriter.js";
+import { onChainReason, parseDecision, underwrite, underwritingFacts } from "../src/agents/underwriter.js";
 import type { Agent, Order, ScoreReport } from "../src/lib/types.js";
 
 const request = { amount: "30000000", vendor_id: "vendor", max_fee: "3000000", expires_at: "0" };
@@ -43,6 +43,14 @@ describe("AI underwriter", () => {
       '{"bid": true, "fee_bps": 1500, "reason": "15% is above the $3 cap on $30"}',
       '{"bid": "yes", "fee_bps": 300}',
     ]) expect(parseDecision(ctx, reply).bid).toBe(false);
+  });
+
+  it("fits the reason into the strategy field on a word boundary", () => {
+    const r = onChainReason("ai: Escrow covers 3.28x the advance, bond is thin, 1 default in 29 loans");
+    expect(r.length).toBeLessThanOrEqual(64);
+    expect(r.endsWith("...")).toBe(true);
+    expect(r).toBe("ai: Escrow covers 3.28x the advance, bond is thin, 1 default...");
+    expect(onChainReason("ai: short")).toBe("ai: short");
   });
 
   it("calls NEAR AI Cloud's OpenAI-compatible endpoint", async () => {

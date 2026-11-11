@@ -2,9 +2,11 @@
 //
 //   OLD_WASM=path/to/deployed.wasm npx tsx scripts/upgrade-rehearsal.ts
 //
-// Deploys the old build, trades on it (a levered order that settles, an open one, a bond), deploys the
-// current build over it, runs `migrate`, then checks that history, totals and balances survived and
-// that the new rules hold: bond locks, operator-only bond withdrawal, and pruning with storage refunds.
+// Deploys the old build (the one live on testnet), trades on it (levered orders that settle, an open one
+// with a withdrawn bid, a bond), deploys the current build over it, runs `migrate`, then checks that
+// history, totals and balances survived and that the new rules hold: operator fee caps, deposits only in
+// the sender's own name, withdrawn bids leaving the order, anyone cancelling an abandoned order after
+// the grace period, and `prune_orders` removing an order the prune cursor had passed.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -14,7 +16,7 @@ import { call, chainNowNs, connect, ContractError, view } from "../src/lib/near.
 import { usd } from "../src/lib/types.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const OLD = process.env.OLD_WASM ?? join(ROOT, "runs/wasm-v3/loca.wasm");
+const OLD = process.env.OLD_WASM ?? join(ROOT, "runs/wasm-v4/loca.wasm");
 const NEW = join(ROOT, "contracts/target/near/loca/loca.wasm");
 const TOKEN = join(ROOT, "contracts/target/near/test_token/test_token.wasm");
 const SEC = 1_000_000_000n;
@@ -71,65 +73,63 @@ try {
   const now0 = await chainNowNs(p);
   const openOrder = await ft(cust, usd(40), { FundOrder: { agent_id: agent.accountId, terms_hash: "open", deadline: (now0 + 3600n * SEC).toString() } });
   const openId = Number(openOrder.events.find((e) => e.event === "order_funded")!.data.order_id);
+  // On the old build a withdrawn bid stays in the order's list.
+  await call(agent, M, "request_credit", { order_id: openId, amount: usd(10).toString(), vendor_id: vendor.accountId, max_fee: usd(1).toString(), expires_at: (now0 + 20n * SEC).toString() });
+  const oldBid = await ft(l1, usd(10), { MakeOffer: { order_id: openId, fee: usd(1).toString(), expires_at: (now0 + 15n * SEC).toString(), strategy: "x" } });
+  await call(l1, M, "withdraw_offer", { offer_id: Number(oldBid.events.find((e) => e.event === "offer_made")!.data.offer_id) });
 
-  const before = await view<{ totals: Record<string, unknown> }>(p, M, "get_market");
+  const before = await view<{ totals: Record<string, unknown>; prune_cursor: number; orders_pruned: number }>(p, M, "get_market");
   const agentBefore = await view<Record<string, unknown>>(p, M, "get_agent", { agent_id: agent.accountId });
-  const scoreBefore = await view<{ score: number }>(p, M, "get_score", { agent_id: agent.accountId });
+  const stBefore = await view<string>(p, M, "storage_balance_of", { account_id: agent.accountId });
   console.log(`old build: ${before.totals.orders} orders, ${before.totals.loans} loans\n`);
 
   // ---------- upgrade ----------
   await loca.deployContract(readFileSync(NEW));
-  await call(loca, M, "migrate", { charged_from_order: 1 }); // pretend order 0 predates storage charging
-  const after = await view<{ totals: Record<string, unknown>; prune_cursor: number }>(p, M, "get_market");
+  await call(loca, M, "migrate", { forwarders: [] });
+  const after = await view<{ totals: Record<string, unknown>; prune_cursor: number; orders_pruned: number }>(p, M, "get_market");
   check(JSON.stringify(after.totals) === JSON.stringify(before.totals), "market totals carried over unchanged");
+  check(after.prune_cursor === before.prune_cursor && after.orders_pruned === before.orders_pruned, "prune cursor and counter carried over");
   check(JSON.stringify(await view(p, M, "get_agent", { agent_id: agent.accountId })) === JSON.stringify(agentBefore), "agent record (stats, bond, policy) carried over");
-  check((await view<{ score: number }>(p, M, "get_score", { agent_id: agent.accountId })).score === scoreBefore.score, "score unchanged");
   check((await view<{ status: string }>(p, M, "get_order", { order_id: openId })).status === "Funded", "open order still in escrow");
-  check(BigInt(await view<string>(p, M, "storage_balance_of", { account_id: agent.accountId })) > 0n, "prepaid storage balances carried over");
+  check((await view<string>(p, M, "storage_balance_of", { account_id: agent.accountId })) === stBefore, "prepaid storage balances carried over");
+  check((await view<number>(p, M, "get_fee_cap", { agent_id: agent.accountId })) === 1000, "agents start with the 10% default fee cap");
+  console.log(`      score after upgrade: ${(await view<{ score: number; rated: boolean }>(p, M, "get_score", { agent_id: agent.accountId })).score}`);
 
   // ---------- new rules on migrated state ----------
-  await refused(call(agent, M, "withdraw_bond", { agent_id: agent.accountId, amount: usd(5).toString() }), "ERR_NOT_OPERATOR", "agent takes its operator's bond");
   const now1 = await chainNowNs(p);
-  await call(agent, M, "request_credit", { order_id: openId, amount: usd(10).toString(), vendor_id: vendor.accountId, max_fee: usd(1).toString(), expires_at: (now1 + 20n * SEC).toString() });
-  await refused(call(operator, M, "withdraw_bond", { agent_id: agent.accountId, amount: usd(5).toString() }), "ERR_BOND_LOCKED", "operator pulls the bond while lenders may bid");
-  const stranger = await ft(cust, usd(5), { PostBond: { agent_id: agent.accountId } });
-  check(stranger.events.some((e) => e.event === "deposit_rejected" && e.data.reason === "ERR_NOT_OPERATOR"), "bond from a non-operator is credited back");
+  const fake = await ft(operator, usd(5), { FundOrder: { agent_id: agent.accountId, terms_hash: "wash", deadline: (now1 + 3600n * SEC).toString(), customer_id: "made-up.test.near" } });
+  check(fake.events.some((e) => e.event === "deposit_rejected" && e.data.reason === "ERR_CUSTOMER_NOT_SENDER"), "order in a made-up customer's name is credited back");
+  await refused(call(agent, M, "request_credit", { order_id: openId, amount: usd(10).toString(), vendor_id: vendor.accountId, max_fee: usd(2).toString(), expires_at: (now1 + 30n * SEC).toString() }), "ERR_FEE_ABOVE_POLICY", "agent asks for a 20% fee");
+  await refused(call(agent, M, "request_credit", { order_id: openId, amount: usd(10).toString(), vendor_id: vendor.accountId, max_fee: usd(1).toString(), expires_at: (now1 + 2n * 3600n * SEC).toString() }), "ERR_BAD_EXPIRY", "request outliving the order");
+  await call(operator, M, "set_spend_policy", { agent_id: agent.accountId, allowed_vendors: [vendor.accountId], max_principal: usd(50).toString(), max_fee_bps: 1500 });
+  check((await view<number>(p, M, "get_fee_cap", { agent_id: agent.accountId })) === 1500, "operator raises the fee cap to 15%");
+  await call(agent, M, "request_credit", { order_id: openId, amount: usd(10).toString(), vendor_id: vendor.accountId, max_fee: usd(1).toString(), expires_at: (now1 + 30n * SEC).toString() });
+  const l2St = BigInt(await view<string>(p, M, "storage_balance_of", { account_id: l2.accountId }));
+  const bid = await ft(l2, usd(10), { MakeOffer: { order_id: openId, fee: usd(1).toString(), expires_at: (now1 + 25n * SEC).toString(), strategy: "y" } });
+  const bidId = Number(bid.events.find((e) => e.event === "offer_made")!.data.offer_id);
+  await call(l2, M, "withdraw_offer", { offer_id: bidId });
+  const openNow = await view<{ offer_ids: number[] }>(p, M, "get_order", { order_id: openId });
+  check(!openNow.offer_ids.includes(bidId) && (await view(p, M, "get_offer", { offer_id: bidId })) === null, "withdrawn bid leaves the order");
+  check(BigInt(await view<string>(p, M, "storage_balance_of", { account_id: l2.accountId })) === l2St, "its storage deposit goes back to the lender");
+  await refused(call(l2, M, "cancel_order", { order_id: openId }), "ERR_BEFORE_DEADLINE", "stranger cancels before the deadline");
 
-  // An order made after the upgrade pays the new storage prices.
-  const lateId = await levered();
-
-  // ---------- pruning ----------
-  check((await call<number>(env.root, M, "prune", { limit: 50 })).value === 0, "nothing prunable while orders are recent");
-  // Jump past the six-hour pruning window in chunks (a big jump stalls the sandbox's RPC).
+  // ---------- abandoned order: anyone cancels after the grace period, then prune_orders removes it ----------
   const start = await chainNowNs(p);
   while ((await chainNowNs(p)) - start < 6n * 3600n * SEC + 60n * SEC) {
     await (p as unknown as { sendJsonRpc(m: string, a: unknown): Promise<unknown> }).sendJsonRpc("sandbox_fast_forward", { delta_height: 5_000 });
     console.log(`      clock +${Number(((await chainNowNs(p)) - start) / SEC / 60n)} min`);
   }
-  const st = async (a: Account) => BigInt(await view<string>(p, M, "storage_balance_of", { account_id: a.accountId }));
-  const [aSt, l1St, ownerSt] = [await st(agent), await st(l1), BigInt(await view<string>(p, M, "storage_balance_of", { account_id: env.root.accountId }))];
-  const accBefore = await p.viewAccount({ accountId: M });
-  const totalsPre = JSON.stringify((await view<{ totals: unknown }>(p, M, "get_market")).totals);
-  const scorePre = (await view<{ score: number }>(p, M, "get_score", { agent_id: agent.accountId })).score;
   const pr = await call<number>(env.root, M, "prune", { limit: 50 });
-  const tx = await p.viewTransactionStatus({ txHash: pr.hash, accountId: env.root.accountId, waitUntil: "FINAL" });
-  const gas = tx.receipts_outcome.reduce((g, r) => g + BigInt(r.outcome.gas_burnt), 0n);
+  check(pr.value === 3, `prune removes the 3 settled orders (got ${pr.value}) and passes the open one`);
+  await call(l2, M, "cancel_order", { order_id: openId });
+  check((await view<{ status: string }>(p, M, "get_order", { order_id: openId })).status === "Refunded", "stranger cancels the abandoned order after the grace period");
+  check((await call<number>(env.root, M, "prune", { limit: 50 })).value === 0, "the cursor has moved past it");
+  check((await call<number>(env.root, M, "prune_orders", { order_ids: [openId] })).value === 1, "prune_orders removes it by id");
   const accAfter = await p.viewAccount({ accountId: M });
-  check(pr.value === 4, `pruned the 4 settled orders (got ${pr.value}), gas ${(Number(gas) / 1e12).toFixed(1)} TGas`);
-  check((await view(p, M, "get_order", { order_id: lateId })) === null, "post-upgrade order removed");
-  check((await view(p, M, "get_order", { order_id: 1 })) === null, "settled order removed");
-  check((await view<{ status: string }>(p, M, "get_order", { order_id: openId })) !== null, "open order kept");
-  const freed = (BigInt(accBefore.storage_usage) - BigInt(accAfter.storage_usage)) * 10n ** 19n;
-  console.log(`      freed ${Number(freed) / 1e24} NEAR of storage; agent +${Number((await st(agent)) - aSt) / 1e24}, l1 +${Number((await st(l1)) - l1St) / 1e24}, owner +${Number(BigInt(await view<string>(p, M, "storage_balance_of", { account_id: env.root.accountId })) - ownerSt) / 1e24}`);
-  check((await st(agent)) > aSt && (await st(l1)) > l1St, "freed storage refunded to the agent and the lenders");
+  const st = async (a: Account) => BigInt(await view<string>(p, M, "storage_balance_of", { account_id: a.accountId }));
   const balances = (await Promise.all([agent, l1, l2, operator, cust].map(st))).reduce((x, y) => x + y, 0n) +
     BigInt(await view<string>(p, M, "storage_balance_of", { account_id: env.root.accountId }));
   check(BigInt(accAfter.amount) - BigInt(accAfter.storage_usage) * 10n ** 19n >= balances, "market can pay back every prepaid storage balance");
-  check(BigInt(await view<string>(p, M, "storage_balance_of", { account_id: env.root.accountId })) > ownerSt, "pre-charging order refunded to the owner");
-  const m = await view<{ totals: Record<string, unknown>; orders_pruned: number }>(p, M, "get_market");
-  check(m.orders_pruned === 4, "orders_pruned counter");
-  check(JSON.stringify(m.totals) === totalsPre, "totals unchanged by pruning");
-  check((await view<{ score: number }>(p, M, "get_score", { agent_id: agent.accountId })).score === scorePre, "score unchanged by pruning");
 } finally {
   await env.close();
 }

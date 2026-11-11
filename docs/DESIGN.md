@@ -79,7 +79,17 @@ A cold review of the public repo (fresh clone, README steps only) found four rea
 
 The upgrade was rehearsed on a local node before it touched testnet (`scripts/upgrade-rehearsal.ts`): deploy the previous build, trade on it, upgrade and `migrate`, then check that totals, agent records, scores, balances and open escrow survived and that the new rules hold on the migrated state.
 
-## 8. Scope cuts
+## 8. Changes after a second review (2026-11-11)
+
+A second cold review, run against the live testnet market, scored the project 80/100 and found four more logic flaws the scripted attacks didn't cover. All are fixed and tested, and the contract was upgraded in place again.
+
+- **A stolen agent key could pay itself through the fee.** The agent may set `max_fee` up to the whole remaining escrow, so a thief could request a $50 advance with a $50 fee, bid from a lender it controls, and collect through the waterfall. Now each operator's policy carries a fee cap (`max_fee_bps`, 10% by default, at most 20%), checked in `request_credit` and again in `accept_offer`. Tests: `agent_cannot_request_a_fee_above_its_operators_cap`, `operator_sets_the_fee_cap_within_the_protocol_ceiling`.
+- **Customers and lenders could be invented.** `FundOrder.customer_id` and `MakeOffer.lender_id` were taken at face value, so an operator could fund tiny orders "from" made-up accounts, finalize them after the window and get its agent rated. Now a deposit may name someone else only when it comes from an owner-approved forwarder (NEAR Intents), and the score's revenue component weighs dollar volume as well as count, with $50 of completed volume required to be rated. Tests: `nobody_but_a_forwarder_funds_in_someone_elses_name`, `nobody_but_a_forwarder_bids_in_someone_elses_name`, `dollar_orders_do_not_make_an_agent_rated`.
+- **Orders could be left behind.** The keeper looked only at the newest 60 orders, and `prune` passed over open orders for good, so about a thousand old orders sat unsettled, some with open loans. Now anyone can cancel an undelivered order an hour after its deadline (the refund still goes to the customer) and close a dispute the arbiter left for three days; `prune_orders(ids)` removes orders that settled after the cursor passed; and the keeper sweeps all of history in windows of 100.
+- **Bid slots could be jammed.** Withdrawn bids stayed in the order's list of ten, so ten bid-and-withdraw cycles closed an order to bidding for free. Now a withdrawn bid leaves the order (and its storage deposit goes back), and expired bids give up their slot when a new bid needs it. Test: `withdrawn_and_expired_bids_free_their_slots`.
+- Smaller: a credit request lasts at most an hour, which bounds how long it locks the bond; the AI lender's on-chain reason is cut on a word boundary.
+
+## 9. Scope cuts
 
 The registry, escrow and credit market are one contract. Out of scope: Chain Signatures, volatile collateral, partial fills and revolving facilities. The seven rule-based lender agents run three demo strategies, each with its own spread, on an open market; they are not presented as independent competition.
 
@@ -97,6 +107,7 @@ The registry, escrow and credit market are one contract. Out of scope: Chain Sig
 | Dashboard (style below), reads run log + live contract views | done |
 | Demo video, X post, submission | done (submitted 2026-11-02) |
 | Review fixes: bond ownership and lock, per-account keys, pruning with storage refunds, AI underwriter, CI | done (35 Rust, 16 TS tests) |
+| Second review: fee cap, sender-only deposits, volume-weighted score, timeouts anyone can trigger, `prune_orders`, reclaimable bid slots | done (46 Rust, 17 TS tests) |
 
 Mainnet note: near-sdk 5.30 wasm imports nearcore 2.14 host functions. Testnet is on protocol 88, mainnet was on protocol 87 on 2026-11-05. A mainnet deploy would need an older near-sdk or a wait for mainnet to upgrade.
 

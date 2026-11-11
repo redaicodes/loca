@@ -113,8 +113,8 @@ You need Rust (pinned by `rust-toolchain.toml`), [`cargo-near`](https://github.c
 ```sh
 pnpm install
 pnpm build:contracts   # contracts/target/near/{loca,test_token}/*.wasm
-pnpm test:contracts    # 35 Rust unit tests
-pnpm test              # 16 TypeScript tests (lender strategies, AI underwriter, Intents adapter, events)
+pnpm test:contracts    # 46 Rust unit tests
+pnpm test              # 17 TypeScript tests (lender strategies, AI underwriter, Intents adapter, events)
 pnpm demo:sim          # starts a local NEAR node and runs the whole loop
 pnpm intents:quote     # live NEAR Intents dry quotes
 pnpm web:dev           # the app on http://localhost:5173
@@ -122,10 +122,10 @@ pnpm web:dev           # the app on http://localhost:5173
 
 | Do | See |
 |---|---|
-| `pnpm demo:sim` | `[ 02 ] Track record: 3 paid orders, score 620 (rated)` |
-| (same run) | Three lenders bid `$1.37`, `$1.20`, `$1.58`; the agent accepts `$1.20` |
+| `pnpm demo:sim` | `[ 02 ] Track record: 3 paid orders, score 581 (rated)` |
+| (same run) | Three lenders bid `$1.40`, `$1.20`, `$1.65`; the agent accepts `$1.20` |
 | (same run) | The vendor gets $30 from the loan; after approval the lender receives $31.20 and the agent $68.80 |
-| (same run) | `Score 620 → 747`; on the second loan the cheapest bid is `$0.60` |
+| (same run) | `Score 581 → 713`; on the second loan the cheapest bid is `$0.60` |
 | (same run) | `[ 05 ] Blocked:` operator posing as customer (`ERR_CUSTOMER_RELATED_PARTY`), loan routed to the operator (`ERR_VENDOR_NOT_IN_POLICY`), advance above 50% (`ERR_EXCEEDS_ADVANCE_RATE`) |
 | open `runs/sandbox-latest.json` | Every step with its tx hash and the events it emitted |
 | `pnpm intents:quote` | `[ OK ] ETH on Arbitrum: pay 0.0449… (~$101.26) → 100.0 USDC delivered`, plus SOL, BTC and Base USDC. An unlisted token shows `ROUTE_UNAVAILABLE`, a bad refund address `QUOTE_REJECTED`. |
@@ -196,15 +196,17 @@ The contract never panics on a deposit that breaks a business rule. It credits t
 | Threat | Handling |
 |---|---|
 | Agent spends the loan on itself | Proceeds go only to a vendor on both the operator's policy and the market's approved list |
-| Operator poses as customer or lender | Onchain related-party checks. Off-chain sybils are **not** detected; lenders require a bond or a rated history. |
+| Operator poses as customer or lender | Onchain related-party checks, and deposits count only in the sender's own name (only NEAR Intents may pay for someone else), so nobody can invent customers or bidders. Sybil accounts that really pay are **not** detected; the score weights dollar volume, so $1 orders build little record. |
 | Operator pulls the bond after lenders priced on it | The bond is locked until the agent's last credit request expires, and while any loan is open |
 | Agent takes its operator's bond, or a stranger plants one | Only the operator can post the bond or withdraw it, and withdrawals go back to the operator |
-| A stolen agent key | It can call five market methods and nothing else. The agent account has no full-access key to steal. |
-| State bloat | Every record is paid for by a storage deposit; settled records are pruned after six hours and the deposit refunded |
+| A stolen agent key | It can call five market methods and nothing else, and the agent account has no full-access key to steal. The worst it can do is borrow inside the operator's policy: approved vendors only, a principal cap, and a fee cap (10% by default) that bounds what it could pay a lender the thief controls. |
+| State bloat | Every record is paid for by a storage deposit; settled records are pruned after six hours and the deposit refunded (`prune` walks forward, `prune_orders` catches orders that settled after it passed) |
 | Customer never approves | Anyone can `finalize` after the dispute window |
+| Customer disappears, or the arbiter never rules | Anyone can cancel an undelivered order an hour after its deadline (the refund still goes to the customer), and close a dispute left unruled for three days (refund; the bond covers the lender). The keeper sweeps old orders for these. |
 | Agent never delivers | Customer cancels after the deadline; the bond covers the lender first; any remaining shortfall is recorded as a default |
 | Same order pledged twice | One lien per order; a second `accept_offer` fails |
 | Unfunded or stale bids | Bids are funded when made; expiry is checked at acceptance |
+| Bid slots jammed | Withdrawn bids leave the order and expired ones give up their slot, so ten live bids are needed to fill it, each with its full principal locked |
 | Failed token transfer | Pull-based balances; a failed `withdraw` is restored in the callback |
 | Emergency | An owner kill switch stops new loans; settlement and withdrawals keep working |
 
@@ -215,7 +217,7 @@ More on each choice: [docs/DESIGN.md](docs/DESIGN.md).
 - This is a hackathon prototype on testnet. It hasn't been audited, and the score weights are rules of thumb, not a validated credit model.
 - The contract uses near-sdk 5.30, which needs nearcore 2.14 host functions. Testnet (protocol 88) has them; mainnet was on protocol 87 as of 2026-11-05, so a mainnet deployment waits for the next upgrade.
 - NEAR Intents has no testnet. Quotes are live mainnet dry runs (`dry: true`, no funds) sent to a stand-in recipient, because 1Click only quotes to existing mainnet accounts. A real swap needs a mainnet deployment.
-- The contract owner curates the vendor list for now.
+- The contract owner curates the vendor list and appoints the arbiter for now; an arbiter that never rules is bounded by the three-day timeout.
 - The AI underwriter and the research agent call NEAR AI Cloud only when `NEAR_AI_API_KEY` is set; without it the AI lender sits out and the research agent uses an offline writer.
 - The swarm simulator holds the seed that derives every participant's key. In a real deployment each party runs its own process with its own key; the contract's related-party checks are written for that case.
 

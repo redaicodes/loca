@@ -43,6 +43,7 @@ enum StorageKey {
     AgentIds,
     Storage,
     BondLocks,
+    FeeCaps,
 }
 
 #[near(contract_state)]
@@ -81,11 +82,16 @@ pub struct Loca {
     prune_cursor: u64,
     /// Settled orders removed from state, with their bids and loans.
     orders_pruned: u64,
+    /// Largest loan fee each operator lets its agent agree to, in basis points of principal.
+    fee_caps: LookupMap<AccountId, u16>,
+    /// Contracts allowed to deposit on someone else's behalf (NEAR Intents). Anyone else funds and
+    /// bids only as themselves, so nobody can invent customers or lenders.
+    forwarders: Vec<AccountId>,
 }
 
-/// Layout before bond locks and pruning, for `migrate`.
+/// Layout before fee caps and forwarders, for `migrate`.
 #[near(serializers = [borsh])]
-pub struct LocaV3 {
+pub struct LocaV4 {
     owner_id: AccountId,
     arbiter_id: AccountId,
     token_id: AccountId,
@@ -106,6 +112,11 @@ pub struct LocaV3 {
     agent_ids: Vector<AccountId>,
     totals: MarketTotals,
     storage: LookupMap<AccountId, u128>,
+    bond_locks: LookupMap<AccountId, u64>,
+    charged_from_order: u64,
+    flat_refund_from_order: u64,
+    prune_cursor: u64,
+    orders_pruned: u64,
 }
 
 const MILLINEAR: u128 = 1_000_000_000_000_000_000_000;
@@ -123,6 +134,15 @@ const MAX_POLICY_VENDORS: usize = 10;
 /// Settled orders stay readable for this long before anyone may prune them.
 pub const PRUNE_AFTER_NS: u64 = 6 * 3_600 * 1_000_000_000;
 const MAX_PRUNE: u32 = 50;
+/// Fee cap for an agent whose operator has not set one, and the most any operator may allow.
+pub const DEFAULT_MAX_FEE_BPS: u16 = 1_000;
+pub const MAX_FEE_BPS: u16 = 2_000;
+/// After an order's deadline the customer may cancel at once; after this grace anyone may.
+pub const CANCEL_GRACE_NS: u64 = 3_600 * 1_000_000_000;
+/// A dispute the arbiter has not ruled on this long after the window closed refunds the customer.
+pub const ARBITER_TIMEOUT_NS: u64 = 3 * 24 * 3_600 * 1_000_000_000;
+/// Longest a credit request may stay open, which also bounds how long it locks the bond.
+pub const MAX_REQUEST_TTL_NS: u64 = 3_600 * 1_000_000_000;
 
 fn add(a: &mut U128, v: u128) {
     a.0 += v;
@@ -183,16 +203,16 @@ impl Loca {
             flat_refund_from_order: 0,
             prune_cursor: 0,
             orders_pruned: 0,
+            fee_caps: LookupMap::new(StorageKey::FeeCaps),
+            forwarders: Vec::new(),
         }
     }
 
-    /// One-time upgrade that adds bond locks and pruning. Keeps all history. `charged_from_order` is
-    /// the first order created after storage accounting went live; older records were paid for by
-    /// the market itself, so their storage goes back to the owner when pruned.
+    /// One-time upgrade that adds operator fee caps and Intents forwarders. Keeps all state.
     #[private]
     #[init(ignore_state)]
-    pub fn migrate(charged_from_order: u64) -> Self {
-        let old: LocaV3 = env::state_read().unwrap_or_else(|| env::panic_str("ERR_NO_STATE"));
+    pub fn migrate(forwarders: Vec<AccountId>) -> Self {
+        let old: LocaV4 = env::state_read().unwrap_or_else(|| env::panic_str("ERR_NO_STATE"));
         Self {
             owner_id: old.owner_id,
             arbiter_id: old.arbiter_id,
@@ -214,11 +234,13 @@ impl Loca {
             agent_ids: old.agent_ids,
             totals: old.totals,
             storage: old.storage,
-            bond_locks: LookupMap::new(StorageKey::BondLocks),
-            charged_from_order,
-            flat_refund_from_order: old.next_order_id,
-            prune_cursor: 0,
-            orders_pruned: 0,
+            bond_locks: old.bond_locks,
+            charged_from_order: old.charged_from_order,
+            flat_refund_from_order: old.flat_refund_from_order,
+            prune_cursor: old.prune_cursor,
+            orders_pruned: old.orders_pruned,
+            fee_caps: LookupMap::new(StorageKey::FeeCaps),
+            forwarders,
         }
     }
 
@@ -272,6 +294,14 @@ impl Loca {
         emit("vendor_removed", json!({ "vendor_id": vendor_id }));
     }
 
+    /// Contracts that may fund orders or bid on someone else's behalf (NEAR Intents' `intents.near`).
+    pub fn set_forwarders(&mut self, forwarders: Vec<AccountId>) {
+        self.assert_owner();
+        require!(forwarders.len() <= 5, "ERR_TOO_MANY_FORWARDERS");
+        emit("forwarders_set", json!({ "forwarders": forwarders }));
+        self.forwarders = forwarders;
+    }
+
     pub fn set_arbiter(&mut self, arbiter_id: AccountId) {
         self.assert_owner();
         self.arbiter_id = arbiter_id.clone();
@@ -322,18 +352,25 @@ impl Loca {
     }
 
     /// Only the operator can set what the agent may spend borrowed funds on.
-    pub fn set_spend_policy(&mut self, agent_id: AccountId, allowed_vendors: Vec<AccountId>, max_principal: U128) {
+    /// `max_fee_bps` caps the fee the agent may agree to per loan; left out, the current cap stays
+    /// (10% until the operator sets one). It bounds what a stolen agent key could pay a lender it controls.
+    pub fn set_spend_policy(&mut self, agent_id: AccountId, allowed_vendors: Vec<AccountId>, max_principal: U128, max_fee_bps: Option<u16>) {
         let mut agent = self.agent(&agent_id);
         require!(env::predecessor_account_id() == agent.operator_id, "ERR_NOT_OPERATOR");
         require!(allowed_vendors.len() <= MAX_POLICY_VENDORS, "ERR_TOO_MANY_VENDORS");
         for v in &allowed_vendors {
             require!(v != &agent.agent_id && v != &agent.operator_id, "ERR_VENDOR_RELATED_PARTY");
         }
+        if let Some(bps) = max_fee_bps {
+            require!(bps <= MAX_FEE_BPS, "ERR_FEE_CAP_TOO_HIGH");
+            self.fee_caps.insert(agent_id.clone(), bps);
+        }
         agent.policy = SpendPolicy { allowed_vendors, max_principal };
         agent.policy_version += 1;
         emit(
             "policy_set",
-            json!({ "agent_id": agent_id, "version": agent.policy_version, "policy": agent.policy }),
+            json!({ "agent_id": agent_id, "version": agent.policy_version, "policy": agent.policy,
+                    "max_fee_bps": self.fee_cap(&agent_id) }),
         );
         self.agents.insert(agent_id, agent);
     }
@@ -353,8 +390,10 @@ impl Loca {
         );
         require!(amount.0 + max_fee.0 <= order.amount.0, "ERR_EXCEEDS_ORDER");
         require!(expires_at.0 > now() && expires_at.0 <= order.deadline.0, "ERR_BAD_EXPIRY");
+        require!(expires_at.0 <= now() + MAX_REQUEST_TTL_NS, "ERR_EXPIRY_TOO_FAR");
         let agent = self.agent(&order.agent_id);
         require!(amount.0 <= agent.policy.max_principal.0, "ERR_EXCEEDS_POLICY");
+        require!(max_fee.0 * 10_000 <= amount.0 * self.fee_cap(&order.agent_id) as u128, "ERR_FEE_ABOVE_POLICY");
         self.assert_vendor_allowed(&agent, &vendor_id);
         // Lenders price bids on the bond, so it stays put until every bid on this request has expired.
         let lock = self.bond_locks.get(&order.agent_id).copied().unwrap_or(0).max(expires_at.0);
@@ -385,6 +424,7 @@ impl Loca {
         // Policy may have changed since the request.
         self.assert_vendor_allowed(&agent, &req.vendor_id);
         require!(offer.principal.0 <= agent.policy.max_principal.0, "ERR_EXCEEDS_POLICY");
+        require!(offer.fee.0 * 10_000 <= offer.principal.0 * self.fee_cap(&order.agent_id) as u128, "ERR_FEE_ABOVE_POLICY");
 
         self.charge_storage(&order.agent_id, STORAGE_LOAN).unwrap_or_else(|e| env::panic_str(e));
         let loan_id = self.next_loan_id;
@@ -437,7 +477,12 @@ impl Loca {
         sub(&mut self.totals.offers_open, offer.principal.0);
         self.credit(&offer.lender_id, offer.principal.0);
         emit("offer_withdrawn", json!({ "offer_id": offer_id, "lender_id": offer.lender_id }));
-        self.offers.insert(offer_id, offer);
+        // The bid leaves the order entirely, so withdrawn bids never take up one of its slots.
+        if let Some(mut order) = self.orders.get(&offer.order_id).cloned() {
+            order.offer_ids.retain(|i| *i != offer_id);
+            self.orders.insert(order.id, order);
+        }
+        self.drop_offer(&offer);
     }
 
     // ---------- delivery and settlement ----------
@@ -494,14 +539,32 @@ impl Loca {
         self.settle(order, refund, "dispute_resolved");
     }
 
-    /// Customer reclaims escrow when the agent missed the deadline without delivering.
+    /// Escrow goes back to the customer when the agent missed the deadline without delivering. The
+    /// customer may cancel as soon as the deadline passes; after a grace period anyone may, so an
+    /// absent customer cannot leave the order, its loan and the lender's money stuck.
     pub fn cancel_order(&mut self, order_id: u64) {
         let order = self.order(order_id);
-        require!(env::predecessor_account_id() == order.customer_id, "ERR_NOT_CUSTOMER");
         require!(order.status == OrderStatus::Funded, "ERR_ORDER_NOT_FUNDED");
         require!(now() > order.deadline.0, "ERR_BEFORE_DEADLINE");
+        require!(
+            env::predecessor_account_id() == order.customer_id || now() > order.deadline.0 + CANCEL_GRACE_NS,
+            "ERR_NOT_CUSTOMER"
+        );
         let refund = order.amount.0;
         self.settle(order, refund, "cancelled");
+    }
+
+    /// Anyone may close a dispute the arbiter has left unruled for three days after the dispute window:
+    /// the customer gets the escrow back and the loan, if any, falls to the bond.
+    pub fn expire_dispute(&mut self, order_id: u64) {
+        let order = self.order(order_id);
+        require!(order.status == OrderStatus::Disputed, "ERR_NOT_DISPUTED");
+        require!(
+            now() >= order.delivered_at.unwrap().0 + self.dispute_window_ns + ARBITER_TIMEOUT_NS,
+            "ERR_ARBITER_STILL_HAS_TIME"
+        );
+        let refund = order.amount.0;
+        self.settle(order, refund, "arbiter_timeout");
     }
 
     // ---------- state hygiene ----------
@@ -512,9 +575,8 @@ impl Loca {
     /// Scores live in each agent's stats and market totals in `totals`, so neither changes.
     pub fn prune(&mut self, limit: Option<u32>) -> u32 {
         let limit = limit.unwrap_or(20).min(MAX_PRUNE);
-        let mut pruned = 0u32;
-        let mut by_agent: Vec<(AccountId, Vec<u64>)> = Vec::new();
-        while pruned < limit && self.prune_cursor < self.next_order_id {
+        let mut pruned = Vec::new();
+        while (pruned.len() as u32) < limit && self.prune_cursor < self.next_order_id {
             let id = self.prune_cursor;
             let Some(order) = self.orders.get(&id).cloned() else {
                 self.prune_cursor += 1;
@@ -524,40 +586,26 @@ impl Loca {
                 break;
             }
             self.prune_cursor += 1;
-            if !matches!(order.status, OrderStatus::Released | OrderStatus::Refunded) {
-                continue; // stuck open; leave it readable
-            }
-            let owner = self.owner_id.clone();
-            let charged = id >= self.charged_from_order;
-            let flat = id >= self.flat_refund_from_order;
-            for offer_id in &order.offer_ids {
-                if let Some(offer) = self.offers.remove(offer_id) {
-                    let freed = self.flush_and_measure();
-                    let refund = if flat { STORAGE_OFFER } else { freed };
-                    self.refund_storage(if charged { &offer.lender_id } else { &owner }, refund);
-                }
-            }
-            let had_loan = order.loan_id.map(|l| self.loans.remove(&l).is_some()).unwrap_or(false);
-            self.orders.remove(&id);
-            let freed = self.flush_and_measure();
-            let refund = if flat { STORAGE_ORDER + if had_loan { STORAGE_LOAN } else { 0 } } else { freed };
-            self.refund_storage(if charged { &order.agent_id } else { &owner }, refund);
-            match by_agent.iter_mut().find(|(a, _)| a == &order.agent_id) {
-                Some((_, ids)) => ids.push(id),
-                None => by_agent.push((order.agent_id.clone(), vec![id])),
-            }
-            pruned += 1;
-        }
-        for (agent_id, ids) in by_agent {
-            if let Some(list) = self.agent_orders.get_mut(&agent_id) {
-                list.retain(|i| !ids.contains(i));
+            // An order still open is passed over; once it settles, `prune_orders` can remove it by id.
+            if self.prune_one(order) {
+                pruned.push(id);
             }
         }
-        self.orders_pruned += pruned as u64;
-        if pruned > 0 {
-            emit("pruned", json!({ "orders": pruned, "cursor": self.prune_cursor }));
+        self.finish_prune(pruned)
+    }
+
+    /// Prune specific settled orders older than six hours, such as ones that settled after the
+    /// cursor passed them. Anyone may call it; the rules and refunds are the same as `prune`.
+    pub fn prune_orders(&mut self, order_ids: Vec<u64>) -> u32 {
+        require!(order_ids.len() as u32 <= MAX_PRUNE, "ERR_TOO_MANY");
+        let mut pruned = Vec::new();
+        for id in order_ids {
+            let Some(order) = self.orders.get(&id).cloned() else { continue };
+            if order.created_at.0 + PRUNE_AFTER_NS <= now() && self.prune_one(order) {
+                pruned.push(id);
+            }
         }
-        pruned
+        self.finish_prune(pruned)
     }
 
     // ---------- funds ----------
@@ -615,7 +663,13 @@ impl Loca {
             dispute_window_ns: U64(self.dispute_window_ns),
             max_advance_bps: self.max_advance_bps,
             approved_vendors: self.approved_vendors.clone(),
+            forwarders: self.forwarders.clone(),
         }
+    }
+
+    /// The largest fee, in basis points of principal, this agent may agree to.
+    pub fn get_fee_cap(&self, agent_id: AccountId) -> u16 {
+        self.fee_cap(&agent_id)
     }
 
     pub fn get_agent(&self, agent_id: AccountId) -> Option<Agent> {
@@ -717,14 +771,22 @@ impl FungibleTokenReceiver for Loca {
         // balance instead of reverting.
         let (beneficiary, result) = match msg {
             TransferMsg::FundOrder { agent_id, terms_hash, deadline, customer_id } => {
-                let customer = customer_id.unwrap_or(sender_id.clone());
-                let r = self.fund_order(customer.clone(), amount.0, agent_id, terms_hash, deadline.0);
-                (customer, r)
+                match self.on_behalf_of(&sender_id, customer_id) {
+                    Ok(customer) => {
+                        let r = self.fund_order(customer.clone(), amount.0, agent_id, terms_hash, deadline.0);
+                        (customer, r)
+                    }
+                    Err(()) => (sender_id.clone(), Err("ERR_CUSTOMER_NOT_SENDER")),
+                }
             }
             TransferMsg::MakeOffer { order_id, fee, expires_at, strategy, lender_id } => {
-                let lender = lender_id.unwrap_or(sender_id.clone());
-                let r = self.make_offer(lender.clone(), amount.0, order_id, fee.0, expires_at.0, strategy);
-                (lender, r)
+                match self.on_behalf_of(&sender_id, lender_id) {
+                    Ok(lender) => {
+                        let r = self.make_offer(lender.clone(), amount.0, order_id, fee.0, expires_at.0, strategy);
+                        (lender, r)
+                    }
+                    Err(()) => (sender_id.clone(), Err("ERR_LENDER_NOT_SENDER")),
+                }
             }
             TransferMsg::PostBond { agent_id } => {
                 let r = match self.agents.get(&agent_id).cloned() {
@@ -754,6 +816,15 @@ impl FungibleTokenReceiver for Loca {
 }
 
 impl Loca {
+    /// The account a deposit is for: the sender, or the account a forwarder (NEAR Intents) names.
+    fn on_behalf_of(&self, sender_id: &AccountId, named: Option<AccountId>) -> Result<AccountId, ()> {
+        match named {
+            Some(id) if &id != sender_id && !self.forwarders.contains(sender_id) => Err(()),
+            Some(id) => Ok(id),
+            None => Ok(sender_id.clone()),
+        }
+    }
+
     fn assert_owner(&self) {
         require!(env::predecessor_account_id() == self.owner_id, "ERR_NOT_OWNER");
     }
@@ -793,6 +864,56 @@ impl Loca {
         }
         let bal = self.storage.get(payer).copied().unwrap_or(0);
         self.storage.insert(payer.clone(), bal + amount);
+    }
+
+    fn fee_cap(&self, agent_id: &AccountId) -> u16 {
+        self.fee_caps.get(agent_id).copied().unwrap_or(DEFAULT_MAX_FEE_BPS)
+    }
+
+    /// Remove a settled order with its bids and loan, refunding the storage each record frees.
+    /// Returns false, changing nothing, if the order is still open.
+    fn prune_one(&mut self, order: Order) -> bool {
+        if !matches!(order.status, OrderStatus::Released | OrderStatus::Refunded) {
+            return false;
+        }
+        let owner = self.owner_id.clone();
+        let charged = order.id >= self.charged_from_order;
+        let flat = order.id >= self.flat_refund_from_order;
+        for offer_id in &order.offer_ids {
+            if let Some(offer) = self.offers.remove(offer_id) {
+                let freed = self.flush_and_measure();
+                let refund = if flat { STORAGE_OFFER } else { freed };
+                self.refund_storage(if charged { &offer.lender_id } else { &owner }, refund);
+            }
+        }
+        let had_loan = order.loan_id.map(|l| self.loans.remove(&l).is_some()).unwrap_or(false);
+        self.orders.remove(&order.id);
+        let freed = self.flush_and_measure();
+        let refund = if flat { STORAGE_ORDER + if had_loan { STORAGE_LOAN } else { 0 } } else { freed };
+        self.refund_storage(if charged { &order.agent_id } else { &owner }, refund);
+        if let Some(list) = self.agent_orders.get_mut(&order.agent_id) {
+            list.retain(|i| *i != order.id);
+        }
+        true
+    }
+
+    fn finish_prune(&mut self, pruned: Vec<u64>) -> u32 {
+        let n = pruned.len() as u32;
+        self.orders_pruned += n as u64;
+        if n > 0 {
+            emit("pruned", json!({ "orders": n, "cursor": self.prune_cursor }));
+        }
+        n
+    }
+
+    /// Delete a bid that is no longer open and give its storage deposit back.
+    fn drop_offer(&mut self, offer: &Offer) {
+        self.offers.remove(&offer.id);
+        let freed = self.flush_and_measure();
+        let charged = offer.order_id >= self.charged_from_order;
+        let refund = if offer.order_id >= self.flat_refund_from_order { STORAGE_OFFER } else { freed };
+        let payer = if charged { offer.lender_id.clone() } else { self.owner_id.clone() };
+        self.refund_storage(&payer, refund);
     }
 
     fn credit(&mut self, account_id: &AccountId, amount: u128) {
@@ -856,8 +977,22 @@ impl Loca {
         let mut order = self.orders.get(&order_id).cloned().ok_or("ERR_UNKNOWN_ORDER")?;
         ensure(order.status == OrderStatus::Funded, "ERR_ORDER_NOT_FUNDED")?;
         ensure(order.loan_id.is_none(), "ERR_ORDER_ALREADY_PLEDGED")?;
-        ensure(order.offer_ids.len() < MAX_OFFERS_PER_ORDER, "ERR_TOO_MANY_OFFERS")?;
         let req = order.credit_request.clone().ok_or("ERR_NO_REQUEST")?;
+        if order.offer_ids.len() >= MAX_OFFERS_PER_ORDER {
+            // Expired bids give up their slots, so a full order can always take a live bid.
+            for id in order.offer_ids.clone() {
+                let Some(mut stale) = self.offers.get(&id).cloned() else { continue };
+                if stale.status == OfferStatus::Open && stale.expires_at.0 <= now() {
+                    stale.status = OfferStatus::Withdrawn;
+                    sub(&mut self.totals.offers_open, stale.principal.0);
+                    self.credit(&stale.lender_id, stale.principal.0);
+                    emit("offer_released", json!({ "offer_id": id, "lender_id": stale.lender_id }));
+                    order.offer_ids.retain(|i| *i != id);
+                    self.drop_offer(&stale);
+                }
+            }
+        }
+        ensure(order.offer_ids.len() < MAX_OFFERS_PER_ORDER, "ERR_TOO_MANY_OFFERS")?;
         ensure(now() < req.expires_at.0, "ERR_REQUEST_EXPIRED")?;
         ensure(principal == req.amount.0, "ERR_OFFER_MISMATCH")?;
         ensure(fee <= req.max_fee.0, "ERR_FEE_TOO_HIGH")?;
@@ -899,7 +1034,7 @@ impl Loca {
     /// Return deposits of every still-open offer on an order.
     fn release_open_offers(&mut self, order: &Order) {
         for id in &order.offer_ids {
-            let mut offer = self.offer(*id);
+            let Some(mut offer) = self.offers.get(id).cloned() else { continue };
             if offer.status == OfferStatus::Open {
                 offer.status = OfferStatus::Withdrawn;
                 sub(&mut self.totals.offers_open, offer.principal.0);

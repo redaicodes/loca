@@ -107,6 +107,8 @@ async function main() {
     () => ft(cust, 500_000n, { FundOrder: { agent_id: agentFull.accountId, terms_hash: "dust", deadline } }));
   await attempt("Order for an agent with no prepaid storage", "customer", "make the market pay for a new order's storage", "contract", "ERR_STORAGE_DEPOSIT_REQUIRED",
     () => ft(cust, usd(20), { FundOrder: { agent_id: `guard-nostore.${ROOT}`, terms_hash: "spam", deadline } }));
+  await attempt("Order in a made-up customer's name", "operator", "fund its agent under invented customer ids to farm the score", "contract", "ERR_CUSTOMER_NOT_SENDER",
+    () => ft(op, usd(5), { FundOrder: { agent_id: agentFull.accountId, terms_hash: "wash", deadline, customer_id: `made-up-customer.${ROOT}` } }));
 
   const funded = await ft(cust, usd(100), { FundOrder: { agent_id: agentFull.accountId, terms_hash: "guardrail-run", deadline } });
   const orderId = Number(funded.events.find((e) => e.event === "order_funded")!.data.order_id);
@@ -120,6 +122,8 @@ async function main() {
   await attempt("Loan to a vendor the protocol hasn't approved", "agent", "pay a vendor the operator listed but the market never approved", "contract", "ERR_VENDOR_NOT_APPROVED",
     () => call(agent, MARKET, "request_credit", { order_id: orderId, amount: usd(30).toString(), vendor_id: lender2.accountId, max_fee: usd(3).toString(), expires_at: reqExpiry() }, 0n, 30_000_000_000_000n));
   await call(op, MARKET, "set_spend_policy", { agent_id: agentFull.accountId, allowed_vendors: [DATAHUB], max_principal: usd(50).toString() });
+  await attempt("Stolen agent key prices a loan for itself", "agent key", "ask for a $20 fee on a $30 advance, to collect through a lender it controls", "contract", "ERR_FEE_ABOVE_POLICY",
+    () => call(agent, MARKET, "request_credit", { order_id: orderId, amount: usd(30).toString(), vendor_id: DATAHUB, max_fee: usd(20).toString(), expires_at: reqExpiry() }, 0n, 30_000_000_000_000n));
   await call(agent, MARKET, "request_credit", { order_id: orderId, amount: usd(30).toString(), vendor_id: DATAHUB, max_fee: usd(3).toString(), expires_at: reqExpiry() }, 0n, 30_000_000_000_000n);
 
   // ---------- the first-loss bond ----------
@@ -138,6 +142,8 @@ async function main() {
     () => ft(lender, usd(30), { MakeOffer: { order_id: orderId, fee: usd(1).toString(), expires_at: offerExp(), strategy: "x" } }));
   await call(lender, MARKET, "storage_deposit", {}, nearToYocto("0.05"));
   await call(lender2, MARKET, "storage_deposit", {}, nearToYocto("0.05"));
+  await attempt("Bid in another lender's name", "lender", "post a bid that names a different lender, to fake demand", "contract", "ERR_LENDER_NOT_SENDER",
+    () => ft(lender2, usd(30), { MakeOffer: { order_id: orderId, fee: usd(1).toString(), expires_at: offerExp(), strategy: "x", lender_id: lender.accountId } }));
   await attempt("Fee above the agent's maximum", "lender", "bid $5 when the agent capped fees at $3", "contract", "ERR_FEE_TOO_HIGH",
     () => ft(lender, usd(30), { MakeOffer: { order_id: orderId, fee: usd(5).toString(), expires_at: offerExp(), strategy: "x" } }));
   const bid = await ft(lender, usd(30), { MakeOffer: { order_id: orderId, fee: usd(1.5).toString(), expires_at: offerExp(), strategy: "manual" } });

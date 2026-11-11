@@ -12,7 +12,7 @@
 
 import { actions, baseDecode, base64Encode, createTransaction, encodeTransaction, KeyType, PublicKey, Signature, SignedTransaction } from "near-api-js";
 import type { BidContext, BidDecision } from "../src/agents/lenders.js";
-import { underwrite } from "../src/agents/underwriter.js";
+import { onChainReason, underwrite } from "../src/agents/underwriter.js";
 import { AGENT_METHODS, AGENTS, CUSTOMERS, DISPUTE_WINDOW_SEC, LENDERS, OPERATORS, VENDORS, lenderQuote, vendorsOf, type AgentSpec } from "../src/swarm/cast.js";
 import { deriveKey } from "../src/swarm/keys.js";
 import type { Agent, Loan, Offer, Order, ScoreReport } from "../src/lib/types.js";
@@ -292,7 +292,7 @@ async function bid(c: Ctx, o: Order, spec: AgentSpec, loans: Loan[]): Promise<bo
     try {
       const d = await underwrite(ctx(c.id(ai.slug)), { apiKey: c.env.NEAR_AI_API_KEY, model: c.env.NEAR_AI_MODEL });
       // The contract caps the field at 64 bytes, so keep it to printable ASCII.
-      if (d.bid) quotes.push({ l: ai, d, strategy: `ai: ${d.rationale[0]}`.replace(/[^\x20-\x7e]/g, "").slice(0, 64) });
+      if (d.bid) quotes.push({ l: ai, d, strategy: onChainReason(`ai: ${d.rationale[0]}`) });
       else c.log("ai_declined", `${ai.name} (${d.model}) passes on #${o.id}: ${d.rationale[0]}`);
     } catch (e) {
       c.log("error", `ai underwriter on #${o.id}: ${String((e as Error).message).slice(0, 120)}`);
@@ -395,6 +395,35 @@ function upkeepTasks(): Task[] {
 }
 const UPKEEP = upkeepTasks();
 
+const CANCEL_GRACE_SEC = 3_600n;
+const ARBITER_TIMEOUT_SEC = 3n * 24n * 3_600n;
+const PRUNE_AFTER_SEC = 6n * 3_600n;
+
+async function sweepOld(c: Ctx, cursor: number, minute: number) {
+  const windows = Math.max(1, Math.ceil(cursor / 100));
+  const from = (Math.floor(minute / 2) % windows) * 100;
+  const orders = await c.chain.view<Order[]>(c.market, "get_orders", { from_id: from, limit: 100 });
+  const prunable: number[] = [];
+  let sent = 0;
+  for (const o of orders) {
+    const age = (c.now - BigInt(o.created_at)) / SEC;
+    let method: string | null = null;
+    if (o.status === "Funded" && c.now > BigInt(o.deadline) + CANCEL_GRACE_SEC * SEC) method = "cancel_order";
+    else if (o.status === "Delivered" && c.now > BigInt(o.delivered_at!) + BigInt(DISPUTE_WINDOW_SEC) * SEC) method = "finalize";
+    else if (o.status === "Disputed" && c.now > BigInt(o.delivered_at!) + (BigInt(DISPUTE_WINDOW_SEC) + ARBITER_TIMEOUT_SEC) * SEC) method = "expire_dispute";
+    else if ((o.status === "Released" || o.status === "Refunded") && o.id < cursor && age > PRUNE_AFTER_SEC) prunable.push(o.id);
+    if (method && sent < 3 && c.chain.left() >= 6) {
+      const hash = await c.chain.send(c.root, c.market, call(method, { order_id: o.id }));
+      c.log("order_settled", `keeper closes stale #${o.id} (${o.status}) with ${method}`, { tx: hash });
+      sent++;
+    }
+  }
+  if (prunable.length && c.chain.left() >= 4) {
+    const hash = await c.chain.send(c.root, c.market, call("prune_orders", { order_ids: prunable.slice(0, 50) }, 300n));
+    c.log("pruned", `${Math.min(50, prunable.length)} settled orders the cursor had passed pruned`, { tx: hash });
+  }
+}
+
 // ---------------------------------------------------------------- entry
 
 export async function tick(env: Env): Promise<{ requests: number; txs: number; steps: number }> {
@@ -417,7 +446,7 @@ export async function tick(env: Env): Promise<{ requests: number; txs: number; s
   };
   let steps = 0;
   try {
-    const m = await chain.view<{ next_order_id: number; next_offer_id: number; next_loan_id: number }>(c.market, "get_market");
+    const m = await chain.view<{ next_order_id: number; next_offer_id: number; next_loan_id: number; prune_cursor: number }>(c.market, "get_market");
     const [orders, offers, loans] = await Promise.all([
       chain.view<Order[]>(c.market, "get_orders", { from_id: Math.max(0, m.next_order_id - 60), limit: 60 }),
       chain.view<Offer[]>(c.market, "get_offer_list", { from_id: Math.max(0, m.next_offer_id - 100), limit: 100 }),
@@ -450,6 +479,13 @@ export async function tick(env: Env): Promise<{ requests: number; txs: number; s
         return null;
       });
       if (hash) c.log("pruned", "settled orders older than 6h pruned; storage deposits refunded", { tx: hash });
+    }
+
+    // On odd minutes, sweep a window of older orders so none is left behind: settle what anyone may
+    // settle (abandoned past the grace period, delivered past the window, disputes the arbiter let
+    // lapse) and prune settled ones the cursor already passed. A full pass over history takes a few hours.
+    if (minute % 2 === 1 && chain.left() >= 12) {
+      await sweepOld(c, m.prune_cursor, minute).catch((e) => c.log("error", `sweep: ${String((e as Error).message).slice(0, 140)}`));
     }
 
     // Pace new orders by the root's NEAR, which pays the swarm's gas. No faucet: it runs on what it has.
