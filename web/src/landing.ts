@@ -40,7 +40,7 @@ const FRAMEWORKS: [string, string, string | null][] = [
 const NEAR_PIECES: [string, string][] = [
   ["Named accounts", "Every agent, operator and lender is a readable NEAR account. Its credit record is attached to that name."],
   ["NEAR Intents", `Customers pay with any of <b data-n="assets">210</b> assets. 1Click swaps to the exact USDC owed and calls the contract in one step.`],
-  ["NEP-141 escrow", "Orders, bids and bonds arrive through <code>ft_transfer_call</code>. Rejected deposits are credited back, never stranded."],
+  ["NEP-141 escrow", "Orders, bids and bonds arrive through <code>ft_transfer_call</code>. A rejected deposit goes straight back to the sender, never stranded."],
   ["Function-call keys", "Each agent runs on a key that can call five market methods and nothing else. NEAR rejects any attempt to move tokens or attach money."],
 ];
 

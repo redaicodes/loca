@@ -5,7 +5,7 @@
 // Uses its own accounts under SWARM_ACCOUNT_ID (join-agent, join-op, join-cust, join-lender,
 // guard-nostore), each with its own key derived from SWARM_SEED, so the swarm's agents are not
 // disturbed. Two layers are tested:
-//   contract  the Loca contract refuses (a failed receipt, or a deposit credited back)
+//   contract  the Loca contract refuses (a failed receipt, or a deposit handed back)
 //   runtime   NEAR refuses before the contract runs (the agent's function-call key)
 
 import "dotenv/config";
@@ -91,7 +91,8 @@ async function main() {
   }
   // The agent process gets a key that can call only the agent methods on the market.
   const kp = KeyPair.fromRandom("ed25519");
-  await agentFull.addFunctionCallAccessKey({ publicKey: kp.getPublicKey().toString(), contractId: MARKET, methodNames: AGENT_METHODS, allowance: nearToYocto("0.5") });
+  // Runtime refusals never reach the chain, so the proof is the key: this transaction shows its five methods.
+  const keyAdded = await agentFull.addFunctionCallAccessKey({ publicKey: kp.getPublicKey().toString(), contractId: MARKET, methodNames: AGENT_METHODS, allowance: nearToYocto("0.5") });
   const agent = acct("join-agent", kp.toString());
   // A failover provider retries invalid transactions on every endpoint and hides the reason, so
   // the key-permission attempts go through one endpoint directly.
@@ -107,6 +108,8 @@ async function main() {
     () => ft(cust, 500_000n, { FundOrder: { agent_id: agentFull.accountId, terms_hash: "dust", deadline } }));
   await attempt("Order for an agent with no prepaid storage", "customer", "make the market pay for a new order's storage", "contract", "ERR_STORAGE_DEPOSIT_REQUIRED",
     () => ft(cust, usd(20), { FundOrder: { agent_id: `guard-nostore.${ROOT}`, terms_hash: "spam", deadline } }));
+  await attempt("Orders that lapse in a minute", "customer", "open orders due in seconds and cancel them, to sink the agent's fulfillment", "contract", "ERR_DEADLINE_TOO_SOON",
+    () => ft(cust, usd(5), { FundOrder: { agent_id: agentFull.accountId, terms_hash: "grief", deadline: (now() + 60n * SEC).toString() } }));
   await attempt("Order in a made-up customer's name", "operator", "fund its agent under invented customer ids to farm the score", "contract", "ERR_CUSTOMER_NOT_SENDER",
     () => ft(op, usd(5), { FundOrder: { agent_id: agentFull.accountId, terms_hash: "wash", deadline, customer_id: `made-up-customer.${ROOT}` } }));
 
@@ -129,8 +132,6 @@ async function main() {
   // ---------- the first-loss bond ----------
   await attempt("Agent takes its operator's bond", "agent account", "withdraw the bond its operator posted, to itself", "contract", "ERR_NOT_OPERATOR",
     () => call(agentFull, MARKET, "withdraw_bond", { agent_id: agentFull.accountId, amount: usd(5).toString() }));
-  await attempt("Bond pulled while lenders are bidding", "operator", "withdraw the bond after lenders priced their bids on it, before a loan exists", "contract", "ERR_BOND_LOCKED",
-    () => call(op, MARKET, "withdraw_bond", { agent_id: agentFull.accountId, amount: usd(5).toString() }));
   await attempt("Stranger plants a bond", "customer", "post a bond for an agent it does not operate, to inflate its credit", "contract", "ERR_NOT_OPERATOR",
     () => ft(cust, usd(5), { PostBond: { agent_id: agentFull.accountId } }));
 
@@ -148,6 +149,8 @@ async function main() {
     () => ft(lender, usd(30), { MakeOffer: { order_id: orderId, fee: usd(5).toString(), expires_at: offerExp(), strategy: "x" } }));
   const bid = await ft(lender, usd(30), { MakeOffer: { order_id: orderId, fee: usd(1.5).toString(), expires_at: offerExp(), strategy: "manual" } });
   const offerId = Number(bid.events.find((e) => e.event === "offer_made")!.data.offer_id);
+  await attempt("Bond pulled while lenders are bidding", "operator", "withdraw the bond after a lender priced its bid on it, before a loan exists", "contract", "ERR_BOND_LOCKED",
+    () => call(op, MARKET, "withdraw_bond", { agent_id: agentFull.accountId, amount: usd(5).toString() }));
   await call(agent, MARKET, "accept_offer", { offer_id: offerId }, 0n, 30_000_000_000_000n);
   await attempt("Second loan on the same order", "lender", "lend against an order that already backs a loan", "contract", "ERR_ORDER_ALREADY_PLEDGED",
     () => ft(lender2, usd(30), { MakeOffer: { order_id: orderId, fee: usd(1).toString(), expires_at: offerExp(), strategy: "x" } }));
@@ -155,6 +158,10 @@ async function main() {
     () => call(op, MARKET, "withdraw_bond", { agent_id: agentFull.accountId, amount: usd(5).toString() }));
   await attempt("Lender cancels a rival's bid", "lender", "withdraw another lender's offer", "contract", "ERR_NOT_LENDER",
     () => call(lender2, MARKET, "withdraw_offer", { offer_id: offerId }));
+  await attempt("Stranger takes the agent's storage", "customer", "withdraw the NEAR the agent prepaid for storage", "contract", "ERR_NOT_OPERATOR",
+    () => call(cust, MARKET, "withdraw_agent_storage", { agent_id: agentFull.accountId }));
+  await attempt("Agent lowers its own order minimum", "agent account", "set the smallest order it takes, which only its operator may do", "contract", "ERR_NOT_OPERATOR",
+    () => call(agentFull, MARKET, "set_order_minimum", { agent_id: agentFull.accountId, min_order: usd(1).toString() }));
   await attempt("Storage withdrawn twice", "lender", "withdraw more prepaid storage NEAR than it deposited", "contract", "ERR_STORAGE_AMOUNT",
     () => call(lender2, MARKET, "storage_withdraw", { amount: nearToYocto("10").toString() }));
 
@@ -182,9 +189,13 @@ async function main() {
     async () => { await agentDirect.addFullAccessKey(KeyPair.fromRandom("ed25519").getPublicKey()); return { hash: "", value: null, events: [], logs: [] }; });
 
   await call(cust, MARKET, "approve", { order_id: orderId });
-  await agentFull.deleteKey(kp.getPublicKey().toString()).catch(() => {});
+  const keyDeleted = await agentFull.deleteKey(kp.getPublicKey().toString()).catch(() => null);
 
-  const out = { contract: MARKET, ranAt: new Date().toISOString(), orderId, cases };
+  const agentKey = {
+    account: agentFull.accountId, publicKey: kp.getPublicKey().toString(), methods: AGENT_METHODS,
+    addedIn: keyAdded.transaction.hash as string, deletedIn: (keyDeleted?.transaction.hash as string | undefined) ?? null,
+  };
+  const out = { contract: MARKET, ranAt: new Date().toISOString(), orderId, agentKey, cases };
   writeFileSync(join(ROOT_DIR, "docs/guardrails.json"), JSON.stringify(out, null, 2));
   const failed = cases.filter((c) => !c.passed);
   console.log(`\n${cases.length - failed.length}/${cases.length} attempts blocked as expected. Written to docs/guardrails.json`);

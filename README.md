@@ -16,7 +16,7 @@ Lender agents bid on the advance. The escrow pays them back before the agent get
 [![TypeScript](https://img.shields.io/badge/agents-TypeScript-3178C6?logo=typescript&logoColor=white)](src/agents/lenders.ts)
 [![Hosted on Cloudflare Workers](https://img.shields.io/badge/hosted-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](worker/swarm.ts)
 [![CI](https://github.com/redaicodes/loca/actions/workflows/ci.yml/badge.svg)](https://github.com/redaicodes/loca/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-35%20Rust%20%2B%2016%20TS-2ea44f)](#run-it-yourself)
+[![Tests](https://img.shields.io/badge/tests-57%20Rust%20%2B%2017%20TS-2ea44f)](#run-it-yourself)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 **Tracks:** `agents` · `defi` · `swarms` · `security` · `business`
@@ -84,7 +84,7 @@ Loca is one Rust contract on NEAR plus agents that call it. These NEAR features 
 | NEAR feature | What it's used for |
 |---|---|
 | **NEAR Intents (1Click API)** | A customer pays from any chain in any supported asset. 1Click swaps to the exact USDC owed and calls `ft_transfer_call` on the contract, which opens the order in the same step. See [oneclick.ts](src/intents/oneclick.ts). |
-| **Function-call access keys** | Each agent signs with a key that can call only `request_credit`, `accept_offer`, `mark_delivered`, `withdraw` and `update_profile`. It can't move tokens, attach NEAR or call admin methods. The protocol rejects those before the contract runs. |
+| **Function-call access keys** | Each agent signs with a key that can call only `request_credit`, `accept_offer`, `mark_delivered`, `withdraw` and `update_profile`. It can't move tokens, attach NEAR or call admin methods, and `withdraw` pays an agent's earnings to its operator. The protocol rejects those before the contract runs. |
 | **Named accounts and sub-accounts** | Every agent, operator, lender and vendor is a readable account such as `atlas.loca-swarm-mvwu8dfo.testnet`, so a credit record is tied to a name anyone can look up. |
 | **NEP-141 / NEP-145** | Escrow, bonds and bids are `ft_transfer_call` deposits of a USDC-style token. Participants prepay storage, so spam can't drain the market account. |
 | **Fast finality** | A loan is requested, bid on, accepted and paid out to a vendor in seconds, so an agent can borrow inside the job it's doing. |
@@ -113,7 +113,7 @@ You need Rust (pinned by `rust-toolchain.toml`), [`cargo-near`](https://github.c
 ```sh
 pnpm install
 pnpm build:contracts   # contracts/target/near/{loca,test_token}/*.wasm
-pnpm test:contracts    # 46 Rust unit tests
+pnpm test:contracts    # 57 Rust unit tests
 pnpm test              # 17 TypeScript tests (lender strategies, AI underwriter, Intents adapter, events)
 pnpm demo:sim          # starts a local NEAR node and runs the whole loop
 pnpm intents:quote     # live NEAR Intents dry quotes
@@ -184,23 +184,29 @@ escrow   ──waterfall──▶ lender principal + fee │ bond covers any sho
 | App | [web/](web/src/main.ts) | Landing page and dashboard that read contract views every few seconds, and a [transaction viewer](web/src/tx.ts) |
 | Upgrade check | [upgrade-rehearsal.ts](scripts/upgrade-rehearsal.ts) | Deploys the previous build on a local node, trades on it, upgrades and migrates it, then checks history, balances and the new rules |
 
-The contract never panics on a deposit that breaks a business rule. It credits the sender instead, so a payment arriving through Intents can't get stuck.
+The contract never panics on a deposit that breaks a business rule. It hands the tokens back to the token contract, which refunds the sender. A payment that arrives through Intents is credited to the account it names instead, so it can't get stuck.
 
 ## Security
 
-`pnpm guardrails` attacks the live market from its own accounts and records what stopped each attempt in [docs/guardrails.json](docs/guardrails.json). Last run (2026-11-11, after the second upgrade): **28 of 28 refused**.
+`pnpm guardrails` attacks the live market from its own accounts and records what stopped each attempt in [docs/guardrails.json](docs/guardrails.json). Last run (2026-11-12, after the third upgrade): **31 of 31 refused**.
 
-- **23 refused by the contract:** an operator paying its own agent, an order in a made-up customer's name, a bid in another lender's name, a stolen agent key asking for a fee above its operator's cap, dust orders, orders or bids without prepaid storage, advances over 50%, loans routed to the operator or an unapproved vendor, an agent taking its operator's bond, a stranger planting a bond, pulling the bond while lenders can still bid or mid-loan, a customer lending against its own order, fees above the agent's cap, a second loan on one order, a lender cancelling a rival's bid, withdrawing storage twice, a lender approving the work, a customer acting as arbiter, early cancellation and early release.
-- **5 refused by NEAR before execution:** the agent's function-call key trying to move tokens, call an admin method, attach NEAR, pull the bond or add itself a full-access key.
+- **26 refused by the contract**, each a testnet transaction you can open:
+  - who pays for an order: an operator paying its own agent, an order in a made-up customer's name, orders due in a minute (to open and cancel them against the agent), dust orders, an order for an agent with no prepaid storage
+  - what the agent may borrow: advances over 50%, loans routed to the operator or to an unapproved vendor, a stolen agent key asking for a fee above its operator's cap
+  - the bond and agent settings: an agent taking its operator's bond, a stranger planting a bond, pulling the bond while a lender's bid is live or mid-loan, a stranger taking the agent's storage NEAR, an agent lowering its own order minimum
+  - who may lend: a customer lending against its own order, a bid without prepaid storage, a bid in another lender's name, a fee above the agent's cap, a second loan on one order, a lender cancelling a rival's bid, withdrawing storage twice
+  - settlement: early cancellation, early release, a lender approving the work, a customer acting as arbiter
+- **5 refused by NEAR before execution:** the agent's function-call key trying to move tokens, call an admin method, attach NEAR, pull the bond or add itself a full-access key. These never reach the chain, so they have no hash. The proof is the key: [the transaction that added it](https://loca.loca-ai.workers.dev/#/app/tx/68CMj1Pj4dJ2tJ3cykduhBPEEgttQyNFmcxCa3VbSdRS) shows its five methods, and [this one](https://loca.loca-ai.workers.dev/#/app/tx/5nXJbVbwp6jEhY4TUf4E1TuagdBstWUJYEp2BXsXnfa7) removed it after the run. The swarm's agents keep keys like it; `view_access_key_list` on any of them shows the same.
 
 | Threat | Handling |
 |---|---|
 | Agent spends the loan on itself | Proceeds go only to a vendor on both the operator's policy and the market's approved list |
-| Operator poses as customer or lender | Onchain related-party checks, and deposits count only in the sender's own name (only NEAR Intents may pay for someone else), so nobody can invent customers or bidders. Sybil accounts that really pay are **not** detected; the score weights dollar volume, so $1 orders build little record. |
-| Operator pulls the bond after lenders priced on it | The bond is locked until the agent's last credit request expires, and while any loan is open |
+| Operator poses as customer or lender | Onchain related-party checks, and deposits count only in the sender's own name, so nobody can invent customers or bidders. Only an approved forwarder (NEAR Intents) may pay for someone else, and an order it funds can hurt the agent's score but never help it. Sybil accounts that really pay are **not** detected; the score weights dollar volume, so $1 orders build little record. |
+| Someone floods an agent with orders and cancels them | An order must give the agent at least ten minutes. A cancellation counts against the agent only if it asked for credit on the order; one it never touched is pruned at once and its storage deposit returned. Operators can raise the agent's minimum order. |
+| Operator pulls the bond after lenders priced on it | The bond is locked while a lender's bid on one of its orders can still be accepted, and while any loan is open. A credit request alone does not lock it. |
 | Agent takes its operator's bond, or a stranger plants one | Only the operator can post the bond or withdraw it, and withdrawals go back to the operator |
-| A stolen agent key | It can call five market methods and nothing else, and the agent account has no full-access key to steal. The worst it can do is borrow inside the operator's policy: approved vendors only, a principal cap, and a fee cap (10% by default) that bounds what it could pay a lender the thief controls. |
-| State bloat | Every record is paid for by a storage deposit; settled records are pruned after six hours and the deposit refunded (`prune` walks forward, `prune_orders` catches orders that settled after it passed) |
+| A stolen agent key | It can call five market methods and nothing else, and the agent account has no full-access key to steal. Its `withdraw` pays the operator, not the agent. The worst it can do is borrow inside the operator's policy: approved vendors only, a principal cap, and a fee cap (10% by default) that bounds what it could pay a lender the thief controls. The operator stops it by setting the principal cap to 0. |
+| State bloat | Every record is paid for by a storage deposit; settled records are pruned after six hours and the deposit refunded (`prune` walks forward, `prune_orders` catches orders that settled after it passed). Rejected deposits go back through the token, so they leave no record, and `withdraw` deletes the balance entry. |
 | Customer never approves | Anyone can `finalize` after the dispute window |
 | Customer disappears, or the arbiter never rules | Anyone can cancel an undelivered order an hour after its deadline (the refund still goes to the customer), and close a dispute left unruled for three days (refund; the bond covers the lender). The keeper sweeps old orders for these. |
 | Agent never delivers | Customer cancels after the deadline; the bond covers the lender first; any remaining shortfall is recorded as a default |
@@ -208,6 +214,7 @@ The contract never panics on a deposit that breaks a business rule. It credits t
 | Unfunded or stale bids | Bids are funded when made; expiry is checked at acceptance |
 | Bid slots jammed | Withdrawn bids leave the order and expired ones give up their slot, so ten live bids are needed to fill it, each with its full principal locked |
 | Failed token transfer | Pull-based balances; a failed `withdraw` is restored in the callback |
+| Agent earnings stranded behind a restricted key | `withdraw` pays an agent's balance to its operator, and the operator can take back the agent's prepaid storage NEAR (`withdraw_agent_storage`) |
 | Emergency | An owner kill switch stops new loans; settlement and withdrawals keep working |
 
 More on each choice: [docs/DESIGN.md](docs/DESIGN.md).
@@ -219,6 +226,8 @@ More on each choice: [docs/DESIGN.md](docs/DESIGN.md).
 - NEAR Intents has no testnet. Quotes are live mainnet dry runs (`dry: true`, no funds) sent to a stand-in recipient, because 1Click only quotes to existing mainnet accounts. A real swap needs a mainnet deployment.
 - The contract owner curates the vendor list and appoints the arbiter for now; an arbiter that never rules is bounded by the three-day timeout.
 - The AI underwriter and the research agent call NEAR AI Cloud only when `NEAR_AI_API_KEY` is set; without it the AI lender sits out and the research agent uses an offline writer.
+- Before the third upgrade, `withdraw` paid agents themselves, and their restricted keys can't move tokens. About 1.8M of the project's own faucet USDC from that time stays in the swarm agents' accounts. New earnings go to the operators.
+- The score's weights are hand-set (score v1 counts each default ten times). A default weighs heavily, but a long clean record still recovers from it.
 - The swarm simulator holds the seed that derives every participant's key. In a real deployment each party runs its own process with its own key; the contract's related-party checks are written for that case.
 
 ## Built with

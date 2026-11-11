@@ -66,12 +66,12 @@ export async function mountTx(hash: string) {
   const outcomes = [tx.execution_outcome.outcome, ...tx.receipts.map((r) => r.execution_outcome.outcome)];
   const failed = outcomes.map(failure).find(Boolean);
   const loca = outcomes.flatMap((o) => events(o.logs)).filter((e) => e.standard === "loca");
-  const rejected = loca.find((e) => e.event === "deposit_rejected")?.data[0] as { reason?: string } | undefined;
+  const rejected = loca.find((e) => e.event === "deposit_rejected")?.data[0] as { reason?: string; returned?: boolean } | undefined;
   const gas = outcomes.reduce((g, o) => g + o.gas_burnt, 0);
   const who = (id: string) => (label(id) !== id ? `${esc(label(id))} <span class="muted small" style="word-break:break-all">${esc(id)}</span>` : `<span style="word-break:break-all">${esc(id)}</span>`);
   const verdict = failed
     ? `<span class="pill s-bad" style="white-space:normal">Refused: ${esc(failed)}</span>`
-    : rejected ? `<span class="pill s-bad" style="white-space:normal">Deposit credited back: ${esc(rejected.reason ?? "")}</span>`
+    : rejected ? `<span class="pill s-bad" style="white-space:normal">Deposit ${rejected.returned ? "returned to the sender" : "credited back"}: ${esc(rejected.reason ?? "")}</span>`
     : `<span class="pill s-done">Succeeded</span>`;
   const actions = t.actions.map((a) => {
     if (typeof a === "string") return `<div><b>${esc(a)}</b></div>`;

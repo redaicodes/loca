@@ -13,7 +13,7 @@
 import { actions, baseDecode, base64Encode, createTransaction, encodeTransaction, KeyType, PublicKey, Signature, SignedTransaction } from "near-api-js";
 import type { BidContext, BidDecision } from "../src/agents/lenders.js";
 import { onChainReason, underwrite } from "../src/agents/underwriter.js";
-import { AGENT_METHODS, AGENTS, CUSTOMERS, DISPUTE_WINDOW_SEC, LENDERS, OPERATORS, VENDORS, lenderQuote, vendorsOf, type AgentSpec } from "../src/swarm/cast.js";
+import { AGENT_METHODS, AGENTS, CUSTOMERS, LENDERS, OPERATORS, VENDORS, lenderQuote, vendorsOf, type AgentSpec } from "../src/swarm/cast.js";
 import { deriveKey } from "../src/swarm/keys.js";
 import type { Agent, Loan, Offer, Order, ScoreReport } from "../src/lib/types.js";
 
@@ -174,6 +174,8 @@ interface Ctx {
   agentSigner: (slug: string) => Signer;
   root: Signer;
   now: bigint;
+  /** The market's dispute window, read from `get_config` each tick: the owner can change it. */
+  disputeSec: number;
   log: (kind: string, text: string, data?: Record<string, unknown>) => void;
 }
 
@@ -247,10 +249,10 @@ async function step(c: Ctx, o: Order, offers: Offer[], loans: Loan[]): Promise<b
       const hash = await c.chain.send(c.signer(customer), c.market, call("approve", { order_id: o.id }));
       c.log("order_settled", `${customer} approves #${o.id}; escrow repays the lender first`, { tx: hash });
     } else if (r < 0.95) {
-      if (since < DISPUTE_WINDOW_SEC + 5) return false;
+      if (since < c.disputeSec + 5) return false;
       const hash = await c.chain.send(c.root, c.market, call("finalize", { order_id: o.id }));
       c.log("order_settled", `${customer} stayed silent; keeper finalizes #${o.id}`, { tx: hash });
-    } else if (since < DISPUTE_WINDOW_SEC - 3) {
+    } else if (since < c.disputeSec - 3) {
       const hash = await c.chain.send(c.signer(customer), c.market, call("dispute", { order_id: o.id, reason_hash: (await sha256hex(`dispute ${o.id}`)).slice(0, 16) }));
       c.log("order_disputed", `${customer} disputes #${o.id}`, { tx: hash });
     } else {
@@ -409,8 +411,8 @@ async function sweepOld(c: Ctx, cursor: number, minute: number) {
     const age = (c.now - BigInt(o.created_at)) / SEC;
     let method: string | null = null;
     if (o.status === "Funded" && c.now > BigInt(o.deadline) + CANCEL_GRACE_SEC * SEC) method = "cancel_order";
-    else if (o.status === "Delivered" && c.now > BigInt(o.delivered_at!) + BigInt(DISPUTE_WINDOW_SEC) * SEC) method = "finalize";
-    else if (o.status === "Disputed" && c.now > BigInt(o.delivered_at!) + (BigInt(DISPUTE_WINDOW_SEC) + ARBITER_TIMEOUT_SEC) * SEC) method = "expire_dispute";
+    else if (o.status === "Delivered" && c.now > BigInt(o.delivered_at!) + BigInt(c.disputeSec) * SEC) method = "finalize";
+    else if (o.status === "Disputed" && c.now > BigInt(o.delivered_at!) + (BigInt(c.disputeSec) + ARBITER_TIMEOUT_SEC) * SEC) method = "expire_dispute";
     else if ((o.status === "Released" || o.status === "Refunded") && o.id < cursor && age > PRUNE_AFTER_SEC) prunable.push(o.id);
     if (method && sent < 3 && c.chain.left() >= 6) {
       const hash = await c.chain.send(c.root, c.market, call(method, { order_id: o.id }));
@@ -438,7 +440,7 @@ export async function tick(env: Env): Promise<{ requests: number; txs: number; s
   };
   const lines: string[] = [];
   const c: Ctx = {
-    env, chain, id, market: id("market"), usdc: id("usdc"), now: BigInt(Date.now()) * 1_000_000n,
+    env, chain, id, market: id("market"), usdc: id("usdc"), now: BigInt(Date.now()) * 1_000_000n, disputeSec: 30,
     signer: (slug) => get(id(slug), "full"),
     agentSigner: (slug) => get(id(slug), "agent"),
     root: new Signer(rootId, Promise.resolve(env.SWARM_PRIVATE_KEY)),
@@ -447,6 +449,7 @@ export async function tick(env: Env): Promise<{ requests: number; txs: number; s
   let steps = 0;
   try {
     const m = await chain.view<{ next_order_id: number; next_offer_id: number; next_loan_id: number; prune_cursor: number }>(c.market, "get_market");
+    c.disputeSec = Number(BigInt((await chain.view<{ dispute_window_ns: string }>(c.market, "get_config")).dispute_window_ns) / SEC);
     const [orders, offers, loans] = await Promise.all([
       chain.view<Order[]>(c.market, "get_orders", { from_id: Math.max(0, m.next_order_id - 60), limit: 60 }),
       chain.view<Offer[]>(c.market, "get_offer_list", { from_id: Math.max(0, m.next_offer_id - 100), limit: 100 }),
@@ -479,6 +482,14 @@ export async function tick(env: Env): Promise<{ requests: number; txs: number; s
         return null;
       });
       if (hash) c.log("pruned", "settled orders older than 6h pruned; storage deposits refunded", { tx: hash });
+    }
+
+    // An order cancelled before its agent asked for credit has no bids or loan, so it can be pruned at
+    // once and the agent gets its storage deposit straight back.
+    const untouched = orders.filter((o) => o.status === "Refunded" && !o.credit_request).map((o) => o.id);
+    if (untouched.length && chain.left() >= 6) {
+      const hash = await chain.send(c.root, c.market, call("prune_orders", { order_ids: untouched }, 300n)).catch(() => null);
+      if (hash) c.log("pruned", `${untouched.length} cancelled orders the agent never took on pruned; storage back to the agent`, { tx: hash });
     }
 
     // On odd minutes, sweep a window of older orders so none is left behind: settle what anyone may

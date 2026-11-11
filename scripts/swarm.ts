@@ -3,7 +3,7 @@
 //
 //   pnpm swarm setup              deploy a fresh market + accounts under SWARM_ACCOUNT_ID (once)
 //   pnpm swarm run [minutes]      run the economy (default 60 minutes; Ctrl-C to stop)
-//   pnpm swarm upgrade <id>       deploy the current build over the live market and migrate it
+//   pnpm swarm upgrade            deploy the current build over the live market and migrate it
 //   pnpm swarm rotate add|remove  move every account onto its own key (see src/swarm/keys.ts)
 //
 // Testnet only. Every participant is a sub-account of the swarm root with its own key, derived from
@@ -277,7 +277,8 @@ async function cycle(a: AgentSpec, mine: { order?: number }) {
   const customer = acct(customerSlug);
   const amount = Math.round(rand(...a.price));
   const t0 = await nowNs();
-  const deadline = t0 + 150n * SEC;
+  // The market gives every order at least ten minutes.
+  const deadline = t0 + 11n * 60n * SEC;
 
   const funded = await ftCall(customer, usd(amount), {
     FundOrder: { agent_id: agentAcc.accountId, terms_hash: sha256(`${a.slug}:${customerSlug}:${t0}`).slice(0, 16), deadline: deadline.toString() },
@@ -502,13 +503,13 @@ const [cmd, arg] = process.argv.slice(2);
 await loadKeys();
 if (cmd === "setup") await setup();
 else if (cmd === "upgrade") {
-  // Deploy the current build over the live market and migrate its state in place. The argument lists
-  // the forwarders allowed to deposit for someone else (none on testnet: NEAR Intents is mainnet only).
+  // Deploy the current build over the live market and migrate its state in place. Settings such as
+  // forwarders and fee caps carry over; the owner changes them with their own methods.
   await acct("market").deployContract(readFileSync(WASM.loca));
-  await call(acct("market"), LOCA, "migrate", { forwarders: arg ? arg.split(",") : [] });
+  await call(acct("market"), LOCA, "migrate", {});
   const m = await view<{ totals: { orders: number } }>("get_market");
   console.log(`Upgraded ${LOCA}; ${m.totals.orders} orders carried over.`);
 }
 else if (cmd === "rotate") await rotateKeys(arg);
 else if (cmd === "run") await run(Number(arg ?? 60));
-else console.log("usage: pnpm swarm setup | run [minutes] | upgrade [forwarders] | rotate add|remove");
+else console.log("usage: pnpm swarm setup | run [minutes] | upgrade | rotate add|remove");

@@ -117,7 +117,8 @@ export async function view<T>(method: string, args: object = {}, contract = CONT
 }
 
 export interface GuardCase { title: string; actor: string; attempt: string; layer: "contract" | "runtime"; expected: string; got: string; tx: string | null; passed: boolean }
-export const GUARDRAILS = guardrailRun as unknown as { contract: string; ranAt: string; orderId: number; cases: GuardCase[] };
+export interface GuardKey { account: string; publicKey: string; methods: string[]; addedIn: string; deletedIn: string | null }
+export const GUARDRAILS = guardrailRun as unknown as { contract: string; ranAt: string; orderId: number; agentKey?: GuardKey; cases: GuardCase[] };
 
 export interface KeyInfo { publicKey: string; full: boolean; receiver?: string; methods?: string[]; allowance?: string | null }
 export async function accessKeys(accountId: string): Promise<KeyInfo[]> {

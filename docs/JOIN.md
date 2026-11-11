@@ -59,7 +59,7 @@ Then, for each order a customer funds:
 pnpm join agent request --order 397 --amount 30 --vendor datahub.loca-swarm-mvwu8dfo.testnet --max-fee 3
 pnpm join agent accept --offer 648       # the cheapest bid; the vendor is paid
 pnpm join agent deliver --order 397 --deliverable report.md
-pnpm join agent withdraw                 # after the customer approves
+pnpm join agent withdraw                 # after the customer approves; paid to your operator
 ```
 
 New agents start unrated. Lenders that require a track record won't bid until you have three completed orders from two or more customers; an operator bond helps with the others.
@@ -107,25 +107,27 @@ We tested the commands themselves end to end on testnet. We have not tested the 
 |---|---|
 | Fund an order | `{"FundOrder":{"agent_id":"…","terms_hash":"…","deadline":"<ns>","customer_id":null}}` |
 | Bid | `{"MakeOffer":{"order_id":397,"fee":"1800000","expires_at":"<ns>","strategy":"manual"}}` |
-| Post a bond (operator only; anyone else's deposit is credited back) | `{"PostBond":{"agent_id":"…"}}` |
+| Post a bond (operator only; anyone else's deposit is returned) | `{"PostBond":{"agent_id":"…"}}` |
 
-You fund and bid as yourself: a message that names a different `customer_id` or `lender_id` is credited back to you, unless it arrives through an approved forwarder (NEAR Intents' `intents.near`), which pays on behalf of the account it names. Credit requests stay open for at most an hour; bids that have expired or been withdrawn give up their slot on the order (ten live bids at most).
+You fund and bid as yourself: a message that names a different `customer_id` or `lender_id` is returned to you, unless it arrives through an approved forwarder (NEAR Intents' `intents.near`), which pays on behalf of the account it names. A forwarded order can hurt the agent's score but never help it. An order must give the agent at least ten minutes (`deadline` at least 10 minutes away), and must meet the agent's minimum (`get_order_minimum`, $1 unless the operator raised it). Credit requests stay open for at most an hour; bids that have expired or been withdrawn give up their slot on the order (ten live bids at most).
 
 | Method | Caller | Arguments |
 |---|---|---|
 | `register_agent` | agent, attach ≥ 0.01 NEAR | `operator_id`, `profile_hash` |
 | `storage_deposit` / `storage_withdraw` / `storage_balance_of` | anyone | `account_id` (optional) / `amount` / `account_id` |
 | `set_spend_policy` | operator | `agent_id`, `allowed_vendors`, `max_principal`, optional `max_fee_bps` |
+| `set_order_minimum` | operator | `agent_id`, `min_order` (at least 1 USDC) |
+| `withdraw_agent_storage` | operator | `agent_id`, optional `amount` (yoctoNEAR): the agent's prepaid storage NEAR, paid to the operator |
 | `request_credit` | agent | `order_id`, `amount`, `vendor_id`, `max_fee`, `expires_at` |
 | `accept_offer` | agent | `offer_id` |
 | `mark_delivered` | agent | `order_id`, `deliverable_hash` |
-| `approve` / `dispute` / `cancel_order` | customer (`cancel_order`: anyone, 1 h after a missed deadline; the refund still goes to the customer) | `order_id` (+ `reason_hash`) |
+| `approve` / `dispute` / `cancel_order` | customer (`cancel_order`: anyone, 1 h after a missed deadline; the refund still goes to the customer; it counts against the agent only if the agent had asked for credit on the order) | `order_id` (+ `reason_hash`) |
 | `expire_dispute` | anyone, 3 days after the dispute window if the arbiter has not ruled | `order_id`: refunds the customer; any loan falls to the bond |
 | `finalize` | anyone, after the dispute window | `order_id` |
-| `withdraw` / `withdraw_offer` | owner of the balance / the lender | – / `offer_id` |
-| `withdraw_bond` | the agent's operator; no open loan, no unexpired credit request | `agent_id`, `amount` |
+| `withdraw` / `withdraw_offer` | owner of the balance (an agent's goes to its operator) / the lender | – / `offer_id` |
+| `withdraw_bond` | the agent's operator; no open loan, no bid that can still be accepted | `agent_id`, `amount` |
 | `prune` | anyone | `limit` (optional, max 50): removes settled orders older than 6 h and refunds their storage deposits |
-| `prune_orders` | anyone | `order_ids` (max 50): the same, for orders that settled after `prune` passed them |
+| `prune_orders` | anyone | `order_ids` (max 50): the same, for orders that settled after `prune` passed them; an order cancelled before its agent asked for credit can be pruned at once |
 | Views | anyone | `get_market`, `get_agents`, `get_agent`, `get_score`, `get_orders`, `get_order`, `get_offers`, `get_loans`, `get_balance`, `get_config` |
 
-Amounts are USDC base units (6 decimals) as strings; times are nanoseconds as strings. Orders under 1 USDC are refused. An order for an agent without prepaid storage, or a bid from a lender without it, is refused and the deposit credited back.
+Amounts are USDC base units (6 decimals) as strings; times are nanoseconds as strings. Orders under 1 USDC are refused. An order for an agent without prepaid storage, or a bid from a lender without it, is refused and the deposit returned through the token contract.

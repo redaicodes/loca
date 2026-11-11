@@ -44,6 +44,8 @@ enum StorageKey {
     Storage,
     BondLocks,
     FeeCaps,
+    MinOrders,
+    Forwarded,
 }
 
 #[near(contract_state)]
@@ -87,9 +89,47 @@ pub struct Loca {
     /// Contracts allowed to deposit on someone else's behalf (NEAR Intents). Anyone else funds and
     /// bids only as themselves, so nobody can invent customers or lenders.
     forwarders: Vec<AccountId>,
+    /// Smallest order each operator lets its agent take, above the protocol's `MIN_ORDER`.
+    min_orders: LookupMap<AccountId, u128>,
+    /// Open orders funded through a forwarder for a customer it named. They settle like any other
+    /// order but leave the agent's score alone: the forwarder cannot prove the named customer is real.
+    forwarded: LookupSet<u64>,
 }
 
-/// Layout before fee caps and forwarders, for `migrate`.
+/// Layout before order minimums and forwarded orders, for `migrate`.
+#[near(serializers = [borsh])]
+pub struct LocaV5 {
+    owner_id: AccountId,
+    arbiter_id: AccountId,
+    token_id: AccountId,
+    paused: bool,
+    dispute_window_ns: u64,
+    max_advance_bps: u16,
+    approved_vendors: Vec<AccountId>,
+    agents: LookupMap<AccountId, Agent>,
+    agent_orders: LookupMap<AccountId, Vec<u64>>,
+    customer_pairs: LookupSet<(AccountId, AccountId)>,
+    orders: LookupMap<u64, Order>,
+    offers: LookupMap<u64, Offer>,
+    loans: LookupMap<u64, Loan>,
+    balances: LookupMap<AccountId, u128>,
+    next_order_id: u64,
+    next_offer_id: u64,
+    next_loan_id: u64,
+    agent_ids: Vector<AccountId>,
+    totals: MarketTotals,
+    storage: LookupMap<AccountId, u128>,
+    bond_locks: LookupMap<AccountId, u64>,
+    charged_from_order: u64,
+    flat_refund_from_order: u64,
+    prune_cursor: u64,
+    orders_pruned: u64,
+    fee_caps: LookupMap<AccountId, u16>,
+    forwarders: Vec<AccountId>,
+}
+
+#[allow(dead_code)]
+/// Layout before fee caps and forwarders, kept to document the upgrade history.
 #[near(serializers = [borsh])]
 pub struct LocaV4 {
     owner_id: AccountId,
@@ -128,6 +168,9 @@ pub const STORAGE_AGENT: u128 = 10 * MILLINEAR;
 pub const STORAGE_ORDER: u128 = 5 * MILLINEAR;
 pub const STORAGE_OFFER: u128 = 2 * MILLINEAR;
 pub const STORAGE_LOAN: u128 = 35 * MILLINEAR / 10;
+/// A per-agent setting (fee cap, order minimum) or an agent-customer pair, about 100 bytes. Charged to
+/// the agent the first time the entry is written.
+pub const STORAGE_ENTRY: u128 = MILLINEAR;
 /// Smallest order, in token base units (1 USDC at 6 decimals). Stops dust orders.
 pub const MIN_ORDER: u128 = 1_000_000;
 const MAX_POLICY_VENDORS: usize = 10;
@@ -143,6 +186,11 @@ pub const CANCEL_GRACE_NS: u64 = 3_600 * 1_000_000_000;
 pub const ARBITER_TIMEOUT_NS: u64 = 3 * 24 * 3_600 * 1_000_000_000;
 /// Longest a credit request may stay open, which also bounds how long it locks the bond.
 pub const MAX_REQUEST_TTL_NS: u64 = 3_600 * 1_000_000_000;
+/// Shortest time an order gives its agent to deliver, so nobody can open and cancel orders in seconds.
+pub const MIN_ORDER_WINDOW_NS: u64 = 10 * 60 * 1_000_000_000;
+/// Bounds for the dispute window the owner may set.
+const MIN_DISPUTE_WINDOW_SEC: u64 = 30;
+const MAX_DISPUTE_WINDOW_SEC: u64 = 7 * 24 * 3_600;
 
 fn add(a: &mut U128, v: u128) {
     a.0 += v;
@@ -205,14 +253,16 @@ impl Loca {
             orders_pruned: 0,
             fee_caps: LookupMap::new(StorageKey::FeeCaps),
             forwarders: Vec::new(),
+            min_orders: LookupMap::new(StorageKey::MinOrders),
+            forwarded: LookupSet::new(StorageKey::Forwarded),
         }
     }
 
-    /// One-time upgrade that adds operator fee caps and Intents forwarders. Keeps all state.
+    /// One-time upgrade that adds operator order minimums and unscored forwarded orders. Keeps all state.
     #[private]
     #[init(ignore_state)]
-    pub fn migrate(forwarders: Vec<AccountId>) -> Self {
-        let old: LocaV4 = env::state_read().unwrap_or_else(|| env::panic_str("ERR_NO_STATE"));
+    pub fn migrate() -> Self {
+        let old: LocaV5 = env::state_read().unwrap_or_else(|| env::panic_str("ERR_NO_STATE"));
         Self {
             owner_id: old.owner_id,
             arbiter_id: old.arbiter_id,
@@ -239,8 +289,10 @@ impl Loca {
             flat_refund_from_order: old.flat_refund_from_order,
             prune_cursor: old.prune_cursor,
             orders_pruned: old.orders_pruned,
-            fee_caps: LookupMap::new(StorageKey::FeeCaps),
-            forwarders,
+            fee_caps: old.fee_caps,
+            forwarders: old.forwarders,
+            min_orders: LookupMap::new(StorageKey::MinOrders),
+            forwarded: LookupSet::new(StorageKey::Forwarded),
         }
     }
 
@@ -268,6 +320,19 @@ impl Loca {
 
     pub fn storage_balance_of(&self, account_id: AccountId) -> U128 {
         U128(self.storage.get(&account_id).copied().unwrap_or(0))
+    }
+
+    /// The operator takes back NEAR its agent prepaid for storage. Agent keys can only reach the market,
+    /// so without this the NEAR would be stranded on the agent account.
+    pub fn withdraw_agent_storage(&mut self, agent_id: AccountId, amount: Option<U128>) -> Promise {
+        let agent = self.agent(&agent_id);
+        require!(env::predecessor_account_id() == agent.operator_id, "ERR_NOT_OPERATOR");
+        let bal = self.storage.get(&agent_id).copied().unwrap_or(0);
+        let amount = amount.map(|a| a.0).unwrap_or(bal);
+        require!(amount > 0 && amount <= bal, "ERR_STORAGE_AMOUNT");
+        self.storage.insert(agent_id.clone(), bal - amount);
+        emit("agent_storage_withdrawn", json!({ "agent_id": agent_id, "operator_id": agent.operator_id, "amount": U128(amount) }));
+        Promise::new(agent.operator_id).transfer(NearToken::from_yoctonear(amount))
     }
 
     // ---------- admin ----------
@@ -300,6 +365,17 @@ impl Loca {
         require!(forwarders.len() <= 5, "ERR_TOO_MANY_FORWARDERS");
         emit("forwarders_set", json!({ "forwarders": forwarders }));
         self.forwarders = forwarders;
+    }
+
+    /// How long a customer has to dispute a delivery before anyone may release the escrow.
+    pub fn set_dispute_window(&mut self, dispute_window_sec: u64) {
+        self.assert_owner();
+        require!(
+            (MIN_DISPUTE_WINDOW_SEC..=MAX_DISPUTE_WINDOW_SEC).contains(&dispute_window_sec),
+            "ERR_DISPUTE_WINDOW"
+        );
+        self.dispute_window_ns = dispute_window_sec * 1_000_000_000;
+        emit("dispute_window_set", json!({ "dispute_window_sec": dispute_window_sec }));
     }
 
     pub fn set_arbiter(&mut self, arbiter_id: AccountId) {
@@ -363,7 +439,9 @@ impl Loca {
         }
         if let Some(bps) = max_fee_bps {
             require!(bps <= MAX_FEE_BPS, "ERR_FEE_CAP_TOO_HIGH");
-            self.fee_caps.insert(agent_id.clone(), bps);
+            if self.fee_caps.insert(agent_id.clone(), bps).is_none() {
+                self.charge_storage(&agent_id, STORAGE_ENTRY).unwrap_or_else(|e| env::panic_str(e));
+            }
         }
         agent.policy = SpendPolicy { allowed_vendors, max_principal };
         agent.policy_version += 1;
@@ -373,6 +451,18 @@ impl Loca {
                     "max_fee_bps": self.fee_cap(&agent_id) }),
         );
         self.agents.insert(agent_id, agent);
+    }
+
+    /// Only the operator sets the smallest order its agent takes. Every order costs the agent storage
+    /// until it is pruned, so a higher minimum makes flooding the agent with orders expensive.
+    pub fn set_order_minimum(&mut self, agent_id: AccountId, min_order: U128) {
+        let agent = self.agent(&agent_id);
+        require!(env::predecessor_account_id() == agent.operator_id, "ERR_NOT_OPERATOR");
+        require!(min_order.0 >= MIN_ORDER, "ERR_ORDER_MINIMUM_TOO_LOW");
+        if self.min_orders.insert(agent_id.clone(), min_order.0).is_none() {
+            self.charge_storage(&agent_id, STORAGE_ENTRY).unwrap_or_else(|e| env::panic_str(e));
+        }
+        emit("order_minimum_set", json!({ "agent_id": agent_id, "min_order": min_order }));
     }
 
     // ---------- credit market ----------
@@ -395,9 +485,6 @@ impl Loca {
         require!(amount.0 <= agent.policy.max_principal.0, "ERR_EXCEEDS_POLICY");
         require!(max_fee.0 * 10_000 <= amount.0 * self.fee_cap(&order.agent_id) as u128, "ERR_FEE_ABOVE_POLICY");
         self.assert_vendor_allowed(&agent, &vendor_id);
-        // Lenders price bids on the bond, so it stays put until every bid on this request has expired.
-        let lock = self.bond_locks.get(&order.agent_id).copied().unwrap_or(0).max(expires_at.0);
-        self.bond_locks.insert(order.agent_id.clone(), lock);
         order.credit_request = Some(CreditRequest { amount, vendor_id: vendor_id.clone(), max_fee, expires_at });
         emit(
             "credit_requested",
@@ -451,7 +538,9 @@ impl Loca {
         add(&mut self.totals.originated, offer.principal.0);
         add(&mut self.totals.outstanding, offer.principal.0);
         agent.active_loans += 1;
-        agent.stats.loans_taken += 1;
+        if !self.forwarded.contains(&order.id) {
+            agent.stats.loans_taken += 1;
+        }
 
         // Proceeds go straight to the vendor, never to the agent.
         self.credit(&req.vendor_id, offer.principal.0);
@@ -596,12 +685,15 @@ impl Loca {
 
     /// Prune specific settled orders older than six hours, such as ones that settled after the
     /// cursor passed them. Anyone may call it; the rules and refunds are the same as `prune`.
+    /// An order cancelled before the agent took it on (no credit request, so no bids or loan) can be
+    /// pruned at once, which hands its storage straight back to the agent.
     pub fn prune_orders(&mut self, order_ids: Vec<u64>) -> u32 {
         require!(order_ids.len() as u32 <= MAX_PRUNE, "ERR_TOO_MANY");
         let mut pruned = Vec::new();
         for id in order_ids {
             let Some(order) = self.orders.get(&id).cloned() else { continue };
-            if order.created_at.0 + PRUNE_AFTER_NS <= now() && self.prune_one(order) {
+            let untouched = order.status == OrderStatus::Refunded && order.credit_request.is_none();
+            if (untouched || order.created_at.0 + PRUNE_AFTER_NS <= now()) && self.prune_one(order) {
                 pruned.push(id);
             }
         }
@@ -610,30 +702,39 @@ impl Loca {
 
     // ---------- funds ----------
 
+    /// Pay out the caller's balance. An agent's earnings go to its operator: the agent key can only call
+    /// the market, so tokens sent to the agent account could never move again, and a stolen key gains nothing.
     pub fn withdraw(&mut self) -> near_sdk::Promise {
         let account_id = env::predecessor_account_id();
-        let amount = self.balances.get(&account_id).copied().unwrap_or(0);
+        let amount = self.balances.remove(&account_id).unwrap_or(0);
         require!(amount > 0, "ERR_NOTHING_TO_WITHDRAW");
-        self.balances.insert(account_id.clone(), 0);
         sub(&mut self.totals.claimable, amount);
+        let receiver_id = self.agents.get(&account_id).map(|a| a.operator_id.clone()).unwrap_or_else(|| account_id.clone());
         ext_ft::ext(self.token_id.clone())
             .with_attached_deposit(NearToken::from_yoctonear(1))
             .with_static_gas(GAS_FT_TRANSFER)
-            .ft_transfer(account_id.clone(), U128(amount), Some("loca withdraw".into()))
+            .ft_transfer(receiver_id.clone(), U128(amount), Some("loca withdraw".into()))
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_WITHDRAW_CALLBACK)
-                    .on_withdraw(account_id, U128(amount)),
+                    .on_withdraw(account_id, U128(amount), Some(receiver_id)),
             )
     }
 
     #[private]
-    pub fn on_withdraw(&mut self, account_id: AccountId, amount: U128, #[callback_result] result: Result<(), PromiseError>) {
+    pub fn on_withdraw(
+        &mut self,
+        account_id: AccountId,
+        amount: U128,
+        receiver_id: Option<AccountId>,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) {
+        let receiver_id = receiver_id.unwrap_or_else(|| account_id.clone());
         if result.is_err() {
             self.credit(&account_id, amount.0);
-            emit("withdraw_failed", json!({ "account_id": account_id, "amount": amount }));
+            emit("withdraw_failed", json!({ "account_id": account_id, "receiver_id": receiver_id, "amount": amount }));
         } else {
-            emit("withdrawn", json!({ "account_id": account_id, "amount": amount }));
+            emit("withdrawn", json!({ "account_id": account_id, "receiver_id": receiver_id, "amount": amount }));
         }
     }
 
@@ -670,6 +771,16 @@ impl Loca {
     /// The largest fee, in basis points of principal, this agent may agree to.
     pub fn get_fee_cap(&self, agent_id: AccountId) -> u16 {
         self.fee_cap(&agent_id)
+    }
+
+    /// The smallest order this agent takes.
+    pub fn get_order_minimum(&self, agent_id: AccountId) -> U128 {
+        U128(self.min_order(&agent_id))
+    }
+
+    /// Whether an open order was funded through a forwarder and so will not count toward the score.
+    pub fn is_forwarded(&self, order_id: u64) -> bool {
+        self.forwarded.contains(&order_id)
     }
 
     pub fn get_agent(&self, agent_id: AccountId) -> Option<Agent> {
@@ -712,8 +823,10 @@ impl Loca {
         U128(self.balances.get(&account_id).copied().unwrap_or(0))
     }
 
-    /// Market-wide totals in one call. Value locked = escrow_held + offers_open + bonds_held + claimable,
-    /// which always equals the contract's token balance.
+    /// Market-wide totals in one call. Value locked = escrow_held + offers_open + bonds_held + claimable:
+    /// every token anyone can claim. The contract's token balance is never below it. It is above it while a
+    /// withdrawal is in flight (the totals drop before the transfer lands), and by any tokens sent with a
+    /// plain `ft_transfer` instead of `ft_transfer_call`, which belong to no account.
     pub fn get_market(&self) -> MarketView {
         MarketView {
             totals: self.totals.clone(),
@@ -773,7 +886,8 @@ impl FungibleTokenReceiver for Loca {
             TransferMsg::FundOrder { agent_id, terms_hash, deadline, customer_id } => {
                 match self.on_behalf_of(&sender_id, customer_id) {
                     Ok(customer) => {
-                        let r = self.fund_order(customer.clone(), amount.0, agent_id, terms_hash, deadline.0);
+                        let forwarded = customer != sender_id;
+                        let r = self.fund_order(customer.clone(), amount.0, agent_id, terms_hash, deadline.0, forwarded);
                         (customer, r)
                     }
                     Err(()) => (sender_id.clone(), Err("ERR_CUSTOMER_NOT_SENDER")),
@@ -803,15 +917,23 @@ impl FungibleTokenReceiver for Loca {
                 (sender_id.clone(), r)
             }
         };
-        if let Err(reason) = result {
-            self.totals.deposits_rejected += 1;
+        let Err(reason) = result else { return PromiseOrValue::Value(U128(0)) };
+        self.totals.deposits_rejected += 1;
+        // A forwarder cannot take a refund (the funds would sit with NEAR Intents), so its deposit is
+        // credited to the account it named. Anyone else gets the tokens back from the token contract,
+        // which leaves no balance record for the market to store.
+        let forwarded = self.forwarders.contains(&sender_id);
+        emit(
+            "deposit_rejected",
+            json!({ "beneficiary": beneficiary, "sender_id": sender_id, "amount": amount, "reason": reason,
+                    "returned": !forwarded }),
+        );
+        if forwarded {
             self.credit(&beneficiary, amount.0);
-            emit(
-                "deposit_rejected",
-                json!({ "beneficiary": beneficiary, "sender_id": sender_id, "amount": amount, "reason": reason }),
-            );
+            PromiseOrValue::Value(U128(0))
+        } else {
+            PromiseOrValue::Value(amount)
         }
-        PromiseOrValue::Value(U128(0))
     }
 }
 
@@ -849,6 +971,12 @@ impl Loca {
         Ok(())
     }
 
+    /// Deduct up to `price` from prepaid storage, for records written while settling, which must not fail.
+    fn charge_up_to(&mut self, payer: &AccountId, price: u128) {
+        let bal = self.storage.get(payer).copied().unwrap_or(0);
+        self.storage.insert(payer.clone(), bal.saturating_sub(price));
+    }
+
     /// Write pending removals to storage and return the NEAR the freed bytes release.
     fn flush_and_measure(&mut self) -> u128 {
         let before = env::storage_usage();
@@ -868,6 +996,10 @@ impl Loca {
 
     fn fee_cap(&self, agent_id: &AccountId) -> u16 {
         self.fee_caps.get(agent_id).copied().unwrap_or(DEFAULT_MAX_FEE_BPS)
+    }
+
+    fn min_order(&self, agent_id: &AccountId) -> u128 {
+        self.min_orders.get(agent_id).copied().unwrap_or(MIN_ORDER)
     }
 
     /// Remove a settled order with its bids and loan, refunding the storage each record frees.
@@ -930,11 +1062,11 @@ impl Loca {
         require!(self.approved_vendors.contains(vendor_id), "ERR_VENDOR_NOT_APPROVED");
     }
 
-    fn fund_order(&mut self, customer_id: AccountId, amount: u128, agent_id: AccountId, terms_hash: String, deadline: u64) -> Result<(), &'static str> {
+    fn fund_order(&mut self, customer_id: AccountId, amount: u128, agent_id: AccountId, terms_hash: String, deadline: u64, forwarded: bool) -> Result<(), &'static str> {
         let mut agent = self.agents.get(&agent_id).cloned().ok_or("ERR_UNKNOWN_AGENT")?;
         ensure(customer_id != agent.agent_id && customer_id != agent.operator_id, "ERR_CUSTOMER_RELATED_PARTY")?;
-        ensure(deadline > now(), "ERR_BAD_DEADLINE")?;
-        ensure(amount >= MIN_ORDER, "ERR_ORDER_TOO_SMALL")?;
+        ensure(deadline >= now() + MIN_ORDER_WINDOW_NS, "ERR_DEADLINE_TOO_SOON")?;
+        ensure(amount >= self.min_order(&agent_id), "ERR_ORDER_TOO_SMALL")?;
         ensure(terms_hash.len() <= 128, "ERR_TERMS_HASH_TOO_LONG")?;
         // The agent pays for the order record; checked last so nothing is charged on a rejection.
         self.charge_storage(&agent_id, STORAGE_ORDER)?;
@@ -956,7 +1088,11 @@ impl Loca {
             loan_id: None,
             customer_refund: U128(0),
         };
-        agent.stats.orders_received += 1;
+        if forwarded {
+            self.forwarded.insert(id);
+        } else {
+            agent.stats.orders_received += 1;
+        }
         self.totals.orders += 1;
         add(&mut self.totals.escrow_volume, amount);
         add(&mut self.totals.escrow_held, amount);
@@ -968,7 +1104,8 @@ impl Loca {
         emit(
             "order_funded",
             json!({ "order_id": id, "agent_id": agent_id, "customer_id": customer_id,
-                    "amount": U128(amount), "terms_hash": terms_hash, "deadline": U64(deadline) }),
+                    "amount": U128(amount), "terms_hash": terms_hash, "deadline": U64(deadline),
+                    "scored": !forwarded }),
         );
         Ok(())
     }
@@ -1004,6 +1141,12 @@ impl Loca {
         )?;
         ensure(strategy.len() <= 64, "ERR_STRATEGY_TOO_LONG")?;
         self.charge_storage(&lender_id, STORAGE_OFFER)?;
+        // Lenders price bids on the bond, so it stays put until this bid can no longer be accepted. Only a
+        // funded bid locks it: a request alone, say from a stolen agent key, does not.
+        let until = expires_at.min(req.expires_at.0);
+        if self.bond_locks.get(&order.agent_id).map_or(true, |l| *l < until) {
+            self.bond_locks.insert(order.agent_id.clone(), until);
+        }
         let id = self.next_offer_id;
         self.next_offer_id += 1;
         let offer = Offer {
@@ -1050,6 +1193,9 @@ impl Loca {
     /// shortfall, and the agent keeps the remainder.
     fn settle(&mut self, mut order: Order, customer_refund: u128, outcome: &str) {
         let mut agent = self.agent(&order.agent_id);
+        // A forwarded order names a customer nobody verified, so it may hurt the agent's score but never
+        // help it: defaults and lost disputes count, completions and repayments do not.
+        let scored = !self.forwarded.remove(&order.id);
         let mut agent_side = order.amount.0 - customer_refund;
         let mut to_lender = 0u128;
         let mut from_bond = 0u128;
@@ -1083,16 +1229,21 @@ impl Loca {
                 loan.status = LoanStatus::Defaulted;
                 agent.stats.loans_defaulted += 1;
                 agent.stats.default_loss = U128(agent.stats.default_loss.0 + shortfall);
+                if !scored {
+                    agent.stats.loans_taken += 1;
+                }
             } else {
                 loan.status = LoanStatus::Repaid;
-                if from_bond > 0 {
+                if scored && from_bond > 0 {
                     agent.stats.loans_repaid_with_bond += 1;
-                } else {
+                } else if scored {
                     agent.stats.loans_repaid += 1;
                 }
             }
-            agent.stats.principal_repaid =
-                U128(agent.stats.principal_repaid.0 + loan.principal.0.min(loan.repaid.0));
+            if scored {
+                agent.stats.principal_repaid =
+                    U128(agent.stats.principal_repaid.0 + loan.principal.0.min(loan.repaid.0));
+            }
             agent.active_loans -= 1;
             self.credit(&loan.lender_id, to_lender + from_bond);
             emit(
@@ -1116,18 +1267,34 @@ impl Loca {
         } else {
             self.totals.orders_settled += 1;
         }
-        agent.stats.revenue = U128(agent.stats.revenue.0 + earned);
-        if customer_refund == 0 {
-            agent.stats.orders_completed += 1;
-            let pair = (order.agent_id.clone(), order.customer_id.clone());
-            if !self.customer_pairs.contains(&pair) {
-                self.customer_pairs.insert(pair);
-                agent.stats.unique_customers += 1;
-            }
-        } else if outcome == "cancelled" {
-            agent.stats.orders_refunded += 1;
+        // A cancelled order counts against the agent only if the agent took it on by asking for credit;
+        // otherwise anyone could sink an agent's fulfillment by opening orders and cancelling them.
+        let counted = if customer_refund == 0 {
+            scored
         } else {
-            agent.stats.disputes_lost += 1;
+            outcome != "cancelled" || order.credit_request.is_some()
+        };
+        if counted {
+            if !scored {
+                agent.stats.orders_received += 1;
+            }
+            if customer_refund == 0 {
+                agent.stats.revenue = U128(agent.stats.revenue.0 + earned);
+                agent.stats.orders_completed += 1;
+                let pair = (order.agent_id.clone(), order.customer_id.clone());
+                if !self.customer_pairs.contains(&pair) {
+                    self.customer_pairs.insert(pair);
+                    agent.stats.unique_customers += 1;
+                    self.charge_up_to(&order.agent_id, STORAGE_ENTRY);
+                }
+            } else if outcome == "cancelled" {
+                agent.stats.orders_refunded += 1;
+            } else {
+                if scored {
+                    agent.stats.revenue = U128(agent.stats.revenue.0 + earned);
+                }
+                agent.stats.disputes_lost += 1;
+            }
         }
 
         order.status = if customer_refund == order.amount.0 { OrderStatus::Refunded } else { OrderStatus::Released };
@@ -1137,7 +1304,7 @@ impl Loca {
             "order_settled",
             json!({ "order_id": order.id, "outcome": outcome, "customer_refund": U128(customer_refund),
                     "to_lender": U128(to_lender + from_bond), "to_agent": U128(agent_side),
-                    "lender_shortfall": U128(shortfall) }),
+                    "lender_shortfall": U128(shortfall), "scored": counted }),
         );
         self.agents.insert(agent.agent_id.clone(), agent);
         self.orders.insert(order.id, order);

@@ -436,9 +436,13 @@ export function guardrails() {
     .filter((c) => c.layer === layer)
     .map((c) => `<tr><td><b>${esc(c.title)}</b><div class="muted small">${esc(c.attempt)}</div></td><td>${esc(c.actor)}</td><td><span class="code ${c.passed ? "bad" : ""}">${esc(c.got)}</span></td><td>${c.tx ? txLink(c.tx) : '<span class="muted small">rejected before execution</span>'}</td></tr>`)
     .join("")}</tbody></table></div>`);
+  const k = g.agentKey;
+  const keyNote = k
+    ? `The agent signs with a function-call key limited to five market methods. NEAR rejects anything else before it reaches the chain, so these have no transaction of their own. The proof is the key: ${txLink(k.addedIn)} added <span class="mono small">${esc(k.publicKey.slice(0, 16))}…</span> to ${esc(label(k.account))} for ${k.methods.map((m) => `<code>${esc(m)}</code>`).join(", ")} only${k.deletedIn ? `, and ${txLink(k.deletedIn)} removed it after the run` : ""}.`
+    : "The agent signs with a function-call key limited to five market methods. NEAR rejects anything else, so there is no transaction to link.";
   return `<h3 class="sec">Guardrails <span class="count">${ok}/${g.cases.length} attacks refused</span></h3>
-  ${group("contract", "Refused by the Loca contract", "The transaction ran and the contract refused it, or credited the deposit back. Each one is a real testnet transaction.")}
-  ${group("runtime", "Refused by NEAR, before the contract runs", "The agent signs with a function-call key limited to five market methods. NEAR rejects anything else, so there is no transaction to link.")}
+  ${group("contract", "Refused by the Loca contract", "The transaction ran and the contract refused it, or handed the deposit back. Each one is a real testnet transaction.")}
+  ${group("runtime", "Refused by NEAR, before the contract runs", keyNote)}
   <p class="muted small">Recorded by <code>pnpm guardrails</code> against ${esc(g.contract)} on ${new Date(g.ranAt).toUTCString()}.</p>`;
 }
 

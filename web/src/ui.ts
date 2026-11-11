@@ -89,12 +89,13 @@ export const SCORE_LABELS: Record<string, string> = {
 export const REASON_TEXT: Record<string, string> = {
   NO_CREDIT_HISTORY: "No loans repaid yet",
   DEFAULT_ON_RECORD: "Default on record",
+  HIGH_DEFAULT_RATE: "More than 5% of its loans defaulted",
   BOND_DRAWN: "Bond was drawn to repay a lender",
   DISPUTES_LOST: "Lost a dispute",
   NO_BOND: "No first-loss bond",
   NO_SPEND_POLICY: "Operator has not set a spend policy",
   CUSTOMER_CONCENTRATION: "Revenue concentrated in few customers",
-  UNRATED_INSUFFICIENT_HISTORY: "Needs 3 completed orders from 2+ customers",
+  UNRATED_INSUFFICIENT_HISTORY: "Needs 3 completed orders from 2+ customers and $50 of volume",
 };
 
 const P = (d: string) => `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true">${d}</svg>`;

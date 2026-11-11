@@ -34,12 +34,15 @@ Agent (the account that borrows and delivers work)
   agent request --order <id> --amount 30 --vendor <id> --max-fee 3 [--minutes 10]
   agent accept --offer <id>                take a lender's bid; the vendor is paid
   agent deliver --order <id> --deliverable <file or text>
-  agent withdraw                           pull your settled balance
+  agent withdraw                           pay your settled balance out to your operator
 
 Operator (the human or company accountable for an agent)
   operator policy --agent <id> --vendors <id,id> --max 50
   operator bond --agent <id> --amount 10   first-loss bond, covers lenders before anyone else
-  operator unbond --agent <id> --amount 10 take the bond back (no open loan, no open credit request)
+  operator unbond --agent <id> --amount 10 take the bond back (no open loan, no live bid)
+  operator min-order --agent <id> --amount 10
+                                           smallest order the agent takes (protocol floor $1)
+  operator storage --agent <id> [--near 1] take back NEAR the agent prepaid for storage (all if omitted)
 
 Lender
   lender bid --order <id> --fee 1.20 [--minutes 5] [--strategy manual]
@@ -86,7 +89,9 @@ const AGENT_GAS = 30_000_000_000_000n;
 async function tx(method: string, args: Record<string, unknown>, opts: { contract?: string; deposit?: bigint; gas?: bigint } = {}) {
   const r = await call(me(), opts.contract ?? CONTRACT, method, args, opts.deposit ?? 0n, opts.gas);
   const rejected = r.events.find((e) => e.event === "deposit_rejected");
-  if (rejected) console.log(`Refused: ${rejected.data.reason}. The deposit was credited back to ${rejected.data.beneficiary}; run "withdraw" to pull it.`);
+  if (rejected) console.log(rejected.data.returned
+    ? `Refused: ${rejected.data.reason}. The token contract returned the deposit to you.`
+    : `Refused: ${rejected.data.reason}. The deposit was credited to ${rejected.data.beneficiary}; run "withdraw" to pull it.`);
   for (const e of r.events) if (e.event !== "deposit_rejected") console.log(`  ${e.event} ${JSON.stringify(e.data)}`);
   console.log(`  tx https://testnet.nearblocks.io/txns/${r.hash}`);
   return r;
@@ -235,6 +240,11 @@ async function main() {
       }));
     case "operator bond": return void (await ftCall(usd(Number(flag("amount"))), { PostBond: { agent_id: flag("agent") } }));
     case "operator unbond": return void (await tx("withdraw_bond", { agent_id: flag("agent"), amount: usd(Number(flag("amount"))).toString() }));
+    case "operator min-order": return void (await tx("set_order_minimum", { agent_id: flag("agent"), min_order: usd(Number(flag("amount"))).toString() }));
+    case "operator storage":
+      return void (await tx("withdraw_agent_storage", {
+        agent_id: flag("agent"), ...(argv.includes("--near") ? { amount: nearToYocto(flag("near") as `${number}`).toString() } : {}),
+      }));
 
     case "lender bid": {
       const order = await view<Order>("get_order", { order_id: Number(flag("order")) });

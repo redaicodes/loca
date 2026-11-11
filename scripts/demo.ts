@@ -190,7 +190,7 @@ async function main() {
         FundOrder: { agent_id: agent.accountId, terms_hash: "x", deadline: ((await now()) + 3600n * SEC).toString() },
       });
       const rej = r.events.find((e) => e.event === "deposit_rejected");
-      log({ act: "05", title: "Blocked: operator posing as customer (deposit credited back, no order)",
+      log({ act: "05", title: "Blocked: operator posing as customer (deposit returned, no order)",
         error: (rej?.data.reason as string) ?? "UNEXPECTEDLY ACCEPTED", tx: r.hash, events: r.events });
     }
     const { id: o3 } = await fundOrder(custC, 100, { brief: "blocked-path" });

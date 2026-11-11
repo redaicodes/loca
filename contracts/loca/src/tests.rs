@@ -17,6 +17,8 @@ struct World {
     c: Loca,
     t: u64,
     deposited: u128,
+    /// Tokens the last deposit handed back to the token contract for refund.
+    returned: u128,
 }
 
 const ACCOUNTS: [&str; 11] = [
@@ -26,7 +28,7 @@ const ACCOUNTS: [&str; 11] = [
 
 impl World {
     fn new() -> Self {
-        let mut w = World { c: unsafe_init(), t: T0, deposited: 0 };
+        let mut w = World { c: unsafe_init(), t: T0, deposited: 0, returned: 0 };
         w.as_("owner.near").c.add_vendor(acc("vendor.near"));
         w.as_("owner.near").c.set_forwarders(vec![acc("intents.near")]);
         w.pay("agent.near", NEAR).c.register_agent(acc("operator.near"), "profile-hash".into());
@@ -60,8 +62,12 @@ impl World {
     }
 
     fn ft(&mut self, from: &str, amount: u128, msg: Value) {
-        self.deposited += amount;
-        let _ = self.as_("usdc.near").c.ft_on_transfer(acc(from), U128(amount), msg.to_string());
+        let r = self.as_("usdc.near").c.ft_on_transfer(acc(from), U128(amount), msg.to_string());
+        self.returned = match r {
+            PromiseOrValue::Value(v) => v.0,
+            PromiseOrValue::Promise(_) => panic!("ft_on_transfer must not return a promise"),
+        };
+        self.deposited += amount - self.returned;
     }
 
     fn fund_order(&mut self, customer: &str, amount: u128) -> u64 {
@@ -229,8 +235,8 @@ fn operator_cannot_be_customer() {
     let mut w = World::new();
     w.fund_order("operator.near", usd(100));
     assert!(w.c.get_order(0).is_none());
-    // Rejected deposits are credited back, never stranded.
-    assert_eq!(w.bal("operator.near"), usd(100));
+    // Rejected deposits go back to the sender through the token contract, never stranded.
+    assert_eq!((w.returned, w.bal("operator.near")), (usd(100), 0));
     w.assert_conserved();
 }
 
@@ -320,7 +326,7 @@ fn customer_cannot_lend_against_own_order() {
     w.request(order, usd(30), usd(3));
     w.offer("customer.near", order, usd(30), usd(1));
     assert!(w.c.get_offers(order).is_empty());
-    assert_eq!(w.bal("customer.near"), usd(30));
+    assert_eq!((w.returned, w.bal("customer.near")), (usd(30), 0));
     w.assert_conserved();
 }
 
@@ -473,7 +479,7 @@ fn only_the_operator_can_post_a_bond() {
     // A third party (here the agent's own customer) cannot plant a bond; the deposit is credited back.
     w.ft("customer.near", usd(10), json!({ "PostBond": { "agent_id": "agent.near" } }));
     assert_eq!(w.c.get_agent(acc("agent.near")).unwrap().bond, U128(0));
-    assert_eq!(w.bal("customer.near"), usd(10));
+    assert_eq!((w.returned, w.bal("customer.near")), (usd(10), 0));
     assert_eq!(w.c.get_market().totals.deposits_rejected, 1);
     w.assert_conserved();
 }
@@ -586,7 +592,7 @@ fn order_rejected_when_agent_has_no_storage() {
     let deadline = U64(w.t + 3_600 * SEC);
     w.ft("customer.near", usd(50), json!({ "FundOrder": { "agent_id": "agent2.near", "terms_hash": "t", "deadline": deadline } }));
     assert!(w.c.get_order(id).is_none(), "order must not be created");
-    assert_eq!(w.bal("customer.near"), usd(50), "deposit credited back");
+    assert_eq!((w.returned, w.bal("customer.near")), (usd(50), 0), "deposit credited back");
     w.assert_conserved();
 }
 
@@ -600,7 +606,7 @@ fn bid_rejected_when_lender_has_no_storage() {
     // evil-vendor.near never prepaid storage.
     w.ft("evil-vendor.near", usd(30), json!({ "MakeOffer": { "order_id": order, "fee": U128(usd(1)), "expires_at": exp, "strategy": "x" } }));
     assert!(w.c.get_offer(id).is_none());
-    assert_eq!(w.bal("evil-vendor.near"), usd(30));
+    assert_eq!((w.returned, w.bal("evil-vendor.near")), (usd(30), 0));
     w.assert_conserved();
 }
 
@@ -611,7 +617,7 @@ fn dust_orders_rejected() {
     let deadline = U64(w.t + 3_600 * SEC);
     w.ft("customer.near", 999_999, json!({ "FundOrder": { "agent_id": "agent.near", "terms_hash": "t", "deadline": deadline } }));
     assert!(w.c.get_order(id).is_none());
-    assert_eq!(w.bal("customer.near"), 999_999);
+    assert_eq!((w.returned, w.bal("customer.near")), (999_999, 0));
 }
 
 #[test]
@@ -656,7 +662,7 @@ fn nobody_but_a_forwarder_funds_in_someone_elses_name() {
     w.ft("mallory.near", usd(10), json!({ "FundOrder": { "agent_id": "agent.near", "terms_hash": "t",
         "deadline": U64(w.t + 3_600 * SEC), "customer_id": "made-up.near" } }));
     assert!(w.c.get_order(0).is_none());
-    assert_eq!(w.bal("mallory.near"), usd(10), "credited back to the real sender");
+    assert_eq!((w.returned, w.bal("mallory.near")), (usd(10), 0), "credited back to the real sender");
     w.assert_conserved();
 }
 
@@ -668,7 +674,7 @@ fn nobody_but_a_forwarder_bids_in_someone_elses_name() {
     w.ft("mallory.near", usd(30), json!({ "MakeOffer": { "order_id": order, "fee": U128(usd(1)),
         "expires_at": U64(w.t + 300 * SEC), "strategy": "x", "lender_id": "lender1.near" } }));
     assert!(w.c.get_offers(order).is_empty());
-    assert_eq!(w.bal("mallory.near"), usd(30));
+    assert_eq!((w.returned, w.bal("mallory.near")), (usd(30), 0));
     w.assert_conserved();
 }
 
@@ -796,4 +802,194 @@ fn dollar_orders_do_not_make_an_agent_rated() {
     let r = w.c.get_score(acc("agent.near")).unwrap();
     assert!(!r.rated, "five $1 orders are not a track record");
     w.assert_conserved();
+}
+
+/// Accounts the last call sent tokens to (`ft_transfer` receipts) and NEAR to (transfer receipts).
+fn payouts() -> (Vec<String>, Vec<String>) {
+    use near_sdk::test_utils::get_created_receipts;
+    use near_sdk::mock::MockAction;
+    let (mut tokens, mut near) = (Vec::new(), Vec::new());
+    for r in get_created_receipts() {
+        for a in &r.actions {
+            match a {
+                MockAction::FunctionCallWeight { method_name, args, .. } if method_name == b"ft_transfer" => {
+                    let v: Value = near_sdk::serde_json::from_slice(args).unwrap();
+                    tokens.push(v["receiver_id"].as_str().unwrap().to_string());
+                }
+                MockAction::Transfer { .. } => near.push(r.receiver_id.to_string()),
+                _ => {}
+            }
+        }
+    }
+    (tokens, near)
+}
+
+#[test]
+fn an_order_gives_the_agent_at_least_ten_minutes() {
+    let mut w = World::new();
+    w.ft("customer.near", usd(20), json!({ "FundOrder": { "agent_id": "agent.near", "terms_hash": "t", "deadline": U64(w.t + 60 * SEC) } }));
+    assert!(w.c.get_order(0).is_none());
+    assert_eq!(w.returned, usd(20));
+    w.ft("customer.near", usd(20), json!({ "FundOrder": { "agent_id": "agent.near", "terms_hash": "t", "deadline": U64(w.t + MIN_ORDER_WINDOW_NS) } }));
+    assert!(w.c.get_order(0).is_some());
+    w.assert_conserved();
+}
+
+#[test]
+fn an_order_the_agent_never_took_on_does_not_count_and_frees_its_storage_at_once() {
+    let mut w = World::new();
+    seed_history(&mut w, 3);
+    let before = w.c.get_score(acc("agent.near")).unwrap().score;
+    let storage = w.c.storage_balance_of(acc("agent.near")).0;
+    // A griefer opens an order and cancels it the moment the deadline passes.
+    let order = w.fund_order("mallory.near", usd(5));
+    w.t += 3_601 * SEC;
+    w.as_("mallory.near").c.cancel_order(order);
+    assert_eq!(w.bal("mallory.near"), usd(5));
+    assert_eq!(w.c.get_agent(acc("agent.near")).unwrap().stats.orders_refunded, 0);
+    assert_eq!(w.c.get_score(acc("agent.near")).unwrap().score, before);
+    // No bids or loan hang off it, so anyone may prune it now rather than in six hours.
+    assert_eq!(w.as_("keeper.near").c.prune_orders(vec![order]), 1);
+    assert_eq!(w.c.storage_balance_of(acc("agent.near")).0, storage);
+    w.assert_conserved();
+}
+
+#[test]
+fn a_missed_deadline_after_asking_for_credit_counts_against_the_agent() {
+    let mut w = World::new();
+    let order = w.fund_order("customer.near", usd(100));
+    w.request(order, usd(30), usd(3));
+    w.t += 3_601 * SEC;
+    w.as_("customer.near").c.cancel_order(order);
+    assert_eq!(w.c.get_agent(acc("agent.near")).unwrap().stats.orders_refunded, 1);
+    // Taken on, it waits the usual six hours to be pruned.
+    assert_eq!(w.as_("keeper.near").c.prune_orders(vec![order]), 0);
+}
+
+#[test]
+fn the_operator_sets_a_minimum_order() {
+    let mut w = World::new();
+    w.as_("operator.near").c.set_order_minimum(acc("agent.near"), U128(usd(10)));
+    assert_eq!(w.c.get_order_minimum(acc("agent.near")), U128(usd(10)));
+    w.fund_order("customer.near", usd(5));
+    assert!(w.c.get_order(0).is_none());
+    assert_eq!(w.returned, usd(5));
+    w.fund_order("customer.near", usd(10));
+    assert!(w.c.get_order(0).is_some());
+    let stranger = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        w.as_("agent.near").c.set_order_minimum(acc("agent.near"), U128(usd(1)))
+    }));
+    assert!(stranger.is_err(), "only the operator sets it");
+    w.assert_conserved();
+}
+
+#[test]
+fn agent_earnings_are_paid_to_the_operator() {
+    let mut w = World::new();
+    seed_history(&mut w, 1);
+    let _ = w.as_("agent.near").c.withdraw();
+    assert_eq!(payouts().0, vec!["operator.near".to_string()]);
+    assert_eq!(w.bal("agent.near"), 0);
+    // A lender's own withdrawal still goes to the lender.
+    let o = w.fund_order("customer.near", usd(100));
+    w.request(o, usd(30), usd(3));
+    let bid = w.offer("lender1.near", o, usd(30), usd(1));
+    w.as_("lender1.near").c.withdraw_offer(bid);
+    let _ = w.as_("lender1.near").c.withdraw();
+    assert_eq!(payouts().0, vec!["lender1.near".to_string()]);
+}
+
+#[test]
+fn the_operator_takes_back_the_agents_storage_near() {
+    let mut w = World::new();
+    let bal = w.c.storage_balance_of(acc("agent.near")).0;
+    let thief = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = w.as_("mallory.near").c.withdraw_agent_storage(acc("agent.near"), None);
+    }));
+    assert!(thief.is_err());
+    let _ = w.as_("operator.near").c.withdraw_agent_storage(acc("agent.near"), Some(U128(bal / 2)));
+    assert_eq!(payouts().1, vec!["operator.near".to_string()]);
+    assert_eq!(w.c.storage_balance_of(acc("agent.near")).0, bal - bal / 2);
+}
+
+#[test]
+fn forwarded_orders_can_hurt_the_score_but_never_help_it() {
+    let mut w = World::new();
+    let fwd = |w: &mut World, customer: &str| {
+        let id = w.c.next_order_id;
+        w.deposited += usd(100);
+        let msg = json!({ "FundOrder": { "agent_id": "agent.near", "terms_hash": "t",
+            "deadline": U64(w.t + 3_600 * SEC), "customer_id": customer } });
+        let _ = w.as_("usdc.near").c.ft_on_transfer(acc("intents.near"), U128(usd(100)), msg.to_string());
+        id
+    };
+    // An operator could name made-up customers through Intents: completing those orders builds nothing.
+    let a = fwd(&mut w, "made-up-1.near");
+    assert!(w.c.is_forwarded(a));
+    w.as_("agent.near").c.mark_delivered(a, "d".into());
+    w.t += 601 * SEC;
+    w.as_("keeper.near").c.finalize(a);
+    let s = w.c.get_agent(acc("agent.near")).unwrap().stats;
+    assert_eq!((s.orders_completed, s.unique_customers, s.revenue), (0, 0, U128(0)));
+    assert!(!w.c.is_forwarded(a));
+    // But a loan that defaults on one still counts.
+    let b = fwd(&mut w, "customer.near");
+    w.request(b, usd(30), usd(3));
+    let o = w.offer("lender1.near", b, usd(30), usd(1));
+    w.as_("agent.near").c.accept_offer(o);
+    w.t += 3_601 * SEC;
+    w.as_("customer.near").c.cancel_order(b);
+    let s = w.c.get_agent(acc("agent.near")).unwrap().stats;
+    assert_eq!((s.loans_taken, s.loans_defaulted, s.orders_refunded), (1, 1, 1));
+    w.assert_conserved();
+}
+
+#[test]
+fn a_credit_request_alone_does_not_lock_the_bond() {
+    let mut w = World::new();
+    w.ft("operator.near", usd(10), json!({ "PostBond": { "agent_id": "agent.near" } }));
+    let order = w.fund_order("customer.near", usd(100));
+    // A stolen agent key can keep asking for credit; without a funded bid the bond stays free.
+    w.request(order, usd(30), usd(3));
+    w.request(order, usd(30), usd(3));
+    w.as_("operator.near").c.withdraw_bond(acc("agent.near"), U128(usd(10)));
+    assert_eq!(w.bal("operator.near"), usd(10));
+    w.assert_conserved();
+}
+
+#[test]
+fn defaults_weigh_ten_times_a_repaid_loan() {
+    let mut w = World::new();
+    let mut agent = w.c.get_agent(acc("agent.near")).unwrap();
+    agent.stats.loans_repaid = 98;
+    agent.stats.loans_defaulted = 2;
+    let r = score::compute(&agent);
+    let rep = r.components.iter().find(|c| c.name == "repayment_history").unwrap();
+    assert_eq!(rep.value_bps, 8_000);
+    agent.stats.loans_repaid = 90;
+    agent.stats.loans_defaulted = 10;
+    let r = score::compute(&agent);
+    assert_eq!(r.components.iter().find(|c| c.name == "repayment_history").unwrap().value_bps, 0);
+    assert!(r.reason_codes.contains(&"HIGH_DEFAULT_RATE".to_string()));
+}
+
+#[test]
+fn withdrawing_and_rejected_deposits_leave_no_balance_records() {
+    let mut w = World::new();
+    seed_history(&mut w, 1);
+    let _ = w.as_("agent.near").c.withdraw();
+    assert!(!w.c.balances.contains_key(&acc("agent.near")));
+    w.ft("mallory.near", usd(2), json!({ "PostBond": { "agent_id": "agent.near" } }));
+    assert!(!w.c.balances.contains_key(&acc("mallory.near")));
+}
+
+#[test]
+fn the_owner_sets_the_dispute_window_within_bounds() {
+    let mut w = World::new();
+    w.as_("owner.near").c.set_dispute_window(900);
+    assert_eq!(w.c.get_config().dispute_window_ns, U64(900 * SEC));
+    for (who, sec) in [("owner.near", 5u64), ("owner.near", 30 * 24 * 3_600), ("mallory.near", 900)] {
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.as_(who).c.set_dispute_window(sec)));
+        assert!(r.is_err(), "{who} {sec}");
+    }
 }
