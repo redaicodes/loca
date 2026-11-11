@@ -76,7 +76,8 @@ export async function underwrite(ctx: BidContext, opts: UnderwriterOptions): Pro
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${opts.apiKey}` },
     body: JSON.stringify({
       model,
-      max_tokens: 200,
+      // The model reasons before it answers; 200 tokens ran out before the JSON.
+      max_tokens: 1_500,
       messages: [
         { role: "system", content: SYSTEM },
         { role: "user", content: JSON.stringify(underwritingFacts(ctx)) },

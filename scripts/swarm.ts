@@ -182,6 +182,9 @@ async function ensureNear(slug: string) {
 async function setup() {
   // Re-runnable: each step checks chain state first, so running it again only adds new cast members.
   const create = async (slug: string, near: string) => {
+    // Look first: with the failover provider, a create that fails as "already exists" on one node is
+    // retried on the next and comes back as a nonce error instead.
+    if (await rotate((p) => p.viewAccount({ accountId: id(slug) })).then(() => true, () => false)) return;
     try {
       await root.createSubAccount({ accountOrPrefix: slug, publicKey: pubOf(KEYS.get(slug)!).toString(), nearToTransfer: nearToYocto(near as `${number}`) });
       console.log(`created ${id(slug)} (${near} NEAR)`);

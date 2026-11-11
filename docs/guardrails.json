@@ -1,7 +1,7 @@
 {
   "contract": "market.loca-swarm-mvwu8dfo.testnet",
-  "ranAt": "2026-10-31T21:55:47.364Z",
-  "orderId": 603,
+  "ranAt": "2026-11-11T08:45:40.457Z",
+  "orderId": 24152,
   "cases": [
     {
       "title": "Operator pays its own agent",
@@ -10,7 +10,7 @@
       "layer": "contract",
       "expected": "ERR_CUSTOMER_RELATED_PARTY",
       "got": "ERR_CUSTOMER_RELATED_PARTY",
-      "tx": "B9skGX8FjVVkbmNcTxejaNt4xUQGD7tQfr6LAhEhQfLN",
+      "tx": "ADeucDdaV8ku7Zxzc2WnjtqrNp46HDSAzGimCt6kxsSL",
       "passed": true
     },
     {
@@ -20,7 +20,7 @@
       "layer": "contract",
       "expected": "ERR_ORDER_TOO_SMALL",
       "got": "ERR_ORDER_TOO_SMALL",
-      "tx": "9hjxm66Da8nBrQRb5iYwEaTZCray3P6yARA58Lph5356",
+      "tx": "A3b4GsjL1fQHc6EdsqW6GSfQpXUaKhgxAEuTixUJ3ovT",
       "passed": true
     },
     {
@@ -30,7 +30,7 @@
       "layer": "contract",
       "expected": "ERR_STORAGE_DEPOSIT_REQUIRED",
       "got": "ERR_STORAGE_DEPOSIT_REQUIRED",
-      "tx": "3ei7C1kKB6nC3PHX8PEdzUDGGZb7oxTrqbYSecRs6UAw",
+      "tx": "3TD618dHJKBjU1xwdB3dGAsbR3zP2WR4PwV6hgvRcRcg",
       "passed": true
     },
     {
@@ -40,7 +40,7 @@
       "layer": "contract",
       "expected": "ERR_EXCEEDS_ADVANCE_RATE",
       "got": "ERR_EXCEEDS_ADVANCE_RATE",
-      "tx": "3suk7tMrgsyvkYt3YKGAhyXx9FsTxHh8tv5bDGib3tNE",
+      "tx": "ExF5gTgB84axFPZDerA8kVwkKAgZn7vQWMizfLX8ENp6",
       "passed": true
     },
     {
@@ -50,7 +50,7 @@
       "layer": "contract",
       "expected": "ERR_VENDOR_NOT_IN_POLICY",
       "got": "ERR_VENDOR_NOT_IN_POLICY",
-      "tx": "GnEboZvhbcdHFitbEyDbm2wnijAFCLh5VLPCe9VKevWR",
+      "tx": "7gnJL7NpivhrzxAB7Duj8PVD2QGHgEXkRV5Qp3HRNGmt",
       "passed": true
     },
     {
@@ -60,7 +60,37 @@
       "layer": "contract",
       "expected": "ERR_VENDOR_NOT_APPROVED",
       "got": "ERR_VENDOR_NOT_APPROVED",
-      "tx": "D1CKgHs2YyCrEeUE6Z5VRBUtLNDwSCBhxbspDWAbsFKW",
+      "tx": "24ePr6QSH5EgTmbeHAwnJrUefC7ftnixLAtNaxW5PtVj",
+      "passed": true
+    },
+    {
+      "title": "Agent takes its operator's bond",
+      "actor": "agent account",
+      "attempt": "withdraw the bond its operator posted, to itself",
+      "layer": "contract",
+      "expected": "ERR_NOT_OPERATOR",
+      "got": "ERR_NOT_OPERATOR",
+      "tx": "5d5jr5iFJ6p1uoyuE6jbMeqeYAo7Ay9BeTLXQrvJCbvJ",
+      "passed": true
+    },
+    {
+      "title": "Bond pulled while lenders are bidding",
+      "actor": "operator",
+      "attempt": "withdraw the bond after lenders priced their bids on it, before a loan exists",
+      "layer": "contract",
+      "expected": "ERR_BOND_LOCKED",
+      "got": "ERR_BOND_LOCKED",
+      "tx": "3bXZKWK3iD2UacNosedRVVKw4aATGkpkh9EG9bctkra8",
+      "passed": true
+    },
+    {
+      "title": "Stranger plants a bond",
+      "actor": "customer",
+      "attempt": "post a bond for an agent it does not operate, to inflate its credit",
+      "layer": "contract",
+      "expected": "ERR_NOT_OPERATOR",
+      "got": "ERR_NOT_OPERATOR",
+      "tx": "2DVRQAQR5zKjKm99qxmrxsCJsbNfkuMa5jodoFkFw1rG",
       "passed": true
     },
     {
@@ -70,7 +100,7 @@
       "layer": "contract",
       "expected": "ERR_LENDER_RELATED_PARTY",
       "got": "ERR_LENDER_RELATED_PARTY",
-      "tx": "fnJFoNsXqAAH9ZbMJsuBGvbKW3hCX4q5sBWoxbaVkeL",
+      "tx": "EEvc4wAntzRozH6fCgvJQTLhu91ucqEJam6dmx31jHMJ",
       "passed": true
     },
     {
@@ -80,7 +110,7 @@
       "layer": "contract",
       "expected": "ERR_STORAGE_DEPOSIT_REQUIRED",
       "got": "ERR_STORAGE_DEPOSIT_REQUIRED",
-      "tx": "5aviapnaET5mrRvyiDuQ3ukXA9ZBxXF2eeEc6jEDgMfh",
+      "tx": "2QyLPBLttFhQbGh3apmiWk2gCmsaNZEcneenSrqKZFQJ",
       "passed": true
     },
     {
@@ -90,7 +120,7 @@
       "layer": "contract",
       "expected": "ERR_FEE_TOO_HIGH",
       "got": "ERR_FEE_TOO_HIGH",
-      "tx": "DP9eXBWNzPFRfa67GWa3LH3MjJ6AaRVuipjU4vtQyGuK",
+      "tx": "GUWs8cSmBwKuUytMYmZuUrrrAXcZ5kZgDE6tmThedWLa",
       "passed": true
     },
     {
@@ -100,17 +130,37 @@
       "layer": "contract",
       "expected": "ERR_ORDER_ALREADY_PLEDGED",
       "got": "ERR_ORDER_ALREADY_PLEDGED",
-      "tx": "CXJa1kuCDVXKSmLGpgd8KPBbBhEA55PN4bcwHKhuYXqV",
+      "tx": "5eJQwSKSSPWCtDC66iunPrk5gHiYZuB34YrrE3u5U5xd",
       "passed": true
     },
     {
       "title": "Bond pulled during a loan",
-      "actor": "agent account",
+      "actor": "operator",
       "attempt": "withdraw the first-loss bond while a loan is open",
       "layer": "contract",
       "expected": "ERR_ACTIVE_LOANS",
       "got": "ERR_ACTIVE_LOANS",
-      "tx": "C3kMk2BCFvQtZuFzAFuwLoxU7kqfbeGt8wsi9C8xors5",
+      "tx": "FtQXUhPNZhpoTJUyBmdbZzNnhTQ9HcN93tuVpwRy1wxw",
+      "passed": true
+    },
+    {
+      "title": "Lender cancels a rival's bid",
+      "actor": "lender",
+      "attempt": "withdraw another lender's offer",
+      "layer": "contract",
+      "expected": "ERR_NOT_LENDER",
+      "got": "ERR_NOT_LENDER",
+      "tx": "DoCK3afgFUZdvPQbD18c6ZnU2k93KMaP5XMHfwiP6a1i",
+      "passed": true
+    },
+    {
+      "title": "Storage withdrawn twice",
+      "actor": "lender",
+      "attempt": "withdraw more prepaid storage NEAR than it deposited",
+      "layer": "contract",
+      "expected": "ERR_STORAGE_AMOUNT",
+      "got": "ERR_STORAGE_AMOUNT",
+      "tx": "329gHCvNt9w72MuRSgwxM9XP3zTrNkaZfUZun77Qoqdw",
       "passed": true
     },
     {
@@ -120,7 +170,7 @@
       "layer": "contract",
       "expected": "ERR_BEFORE_DEADLINE",
       "got": "ERR_BEFORE_DEADLINE",
-      "tx": "GsoV56X9vUP1Wo8bw4F1ATd28LT7H4jPyGdLUnTtULX1",
+      "tx": "4edv5DffUbwHaWdz44VuyKM26zC4pxsNuECgY5YqmVfu",
       "passed": true
     },
     {
@@ -130,7 +180,27 @@
       "layer": "contract",
       "expected": "ERR_DISPUTE_WINDOW_OPEN",
       "got": "ERR_DISPUTE_WINDOW_OPEN",
-      "tx": "5Av7Qwncw5Y6XfEwiTkQxKhWYtSZF522sc8guWkqtCmC",
+      "tx": "BQV98V2oiwjPnca9CY6traAZDW4Dgj5nQ6rEu853hsaR",
+      "passed": true
+    },
+    {
+      "title": "Lender approves the work",
+      "actor": "lender",
+      "attempt": "approve delivery in the customer's place to get repaid sooner",
+      "layer": "contract",
+      "expected": "ERR_NOT_CUSTOMER",
+      "got": "ERR_NOT_CUSTOMER",
+      "tx": "BvZFVYSnvZ1roFoG5WawPnLdxbAAhRw8Jk9SWCzNSFy7",
+      "passed": true
+    },
+    {
+      "title": "Customer plays arbiter",
+      "actor": "customer",
+      "attempt": "rule on its own dispute and refund itself",
+      "layer": "contract",
+      "expected": "ERR_NOT_ARBITER",
+      "got": "ERR_NOT_ARBITER",
+      "tx": "8T5ofebRanWgzF4tU1Nv5zDjLfYjX8aJRi6VQDxXiv2w",
       "passed": true
     },
     {
@@ -160,6 +230,26 @@
       "layer": "runtime",
       "expected": "DepositWithFunctionCall",
       "got": "DepositWithFunctionCall",
+      "tx": null,
+      "passed": true
+    },
+    {
+      "title": "Agent key pulls the bond",
+      "actor": "agent key",
+      "attempt": "call withdraw_bond with the agent's own key",
+      "layer": "runtime",
+      "expected": "MethodNameMismatch",
+      "got": "MethodNameMismatch",
+      "tx": null,
+      "passed": true
+    },
+    {
+      "title": "Agent key grants itself full access",
+      "actor": "agent key",
+      "attempt": "add a full-access key to the agent account",
+      "layer": "runtime",
+      "expected": "RequiresFullAccess",
+      "got": "RequiresFullAccess",
       "tx": null,
       "passed": true
     }

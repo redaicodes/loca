@@ -163,6 +163,11 @@
       "id": "tidewater.loca-swarm-mvwu8dfo.testnet",
       "name": "Tidewater Capital",
       "strategy": "escrow-coverage"
+    },
+    {
+      "id": "sable-ai.loca-swarm-mvwu8dfo.testnet",
+      "name": "Sable AI Underwriting",
+      "strategy": "ai-underwriter"
     }
   ],
   "vendors": [

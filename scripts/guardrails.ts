@@ -12,7 +12,7 @@ import "dotenv/config";
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPair, type KeyPairString, nearToYocto } from "near-api-js";
+import { Account, JsonRpcProvider, KeyPair, type KeyPairString, nearToYocto } from "near-api-js";
 import { call, ContractError, type TxResult } from "../src/lib/near.js";
 import { deriveKey } from "../src/swarm/keys.js";
 import { usd } from "../src/lib/types.js";
@@ -27,10 +27,9 @@ const DATAHUB = `datahub.${ROOT}`;
 const AGENT_METHODS = ["request_credit", "accept_offer", "mark_delivered", "withdraw", "update_profile"];
 const SEC = 1_000_000_000n;
 
-const provider = new FailoverRpcProvider(
-  ["https://rpc.testnet.fastnear.com", "https://near-testnet.drpc.org", "https://test.rpc.fastnear.com"]
-    .map((url) => new JsonRpcProvider({ url }, { retries: 4, wait: 800, backoff: 1.7 })),
-);
+// One node: a failover provider resends a refused transaction to the next node, which then reports a
+// nonce error in place of the refusal this script is here to record.
+const provider = new JsonRpcProvider({ url: "https://rpc.testnet.fastnear.com" }, { retries: 4, wait: 800, backoff: 1.7 });
 const acct = (slug: string, key: string = KEYS.get(slug)!) => new Account(`${slug}.${ROOT}`, provider, key as KeyPairString);
 const root = new Account(ROOT, provider, process.env.SWARM_PRIVATE_KEY as KeyPairString);
 const view = <T>(method: string, args: Record<string, unknown> = {}, contract = MARKET) =>
@@ -44,7 +43,9 @@ const cases: Case[] = [];
 async function attempt(title: string, actor: string, desc: string, layer: Layer, expected: string, fn: () => Promise<TxResult>) {
   let got = "SUCCEEDED", tx: string | null = null;
   try {
-    const r = await fn();
+    // A refused call that the failover provider resends to the next node comes back as a nonce error,
+    // which hides the real refusal. Send it again with a fresh nonce.
+    const r = await fn().catch((e) => (/InvalidNonce|Exceeded \d+ providers/.test(String(e)) ? fn() : Promise.reject(e)));
     tx = r.hash;
     const rej = r.events.find((e) => e.event === "deposit_rejected");
     if (rej) got = String(rej.data.reason);
@@ -59,7 +60,7 @@ async function attempt(title: string, actor: string, desc: string, layer: Layer,
   }
   const passed = got === expected;
   cases.push({ title, actor, attempt: desc, layer, expected, got, tx, passed });
-  console.log(`${passed ? "BLOCKED " : "UNEXPECTED"}  ${title}: ${got}${tx ? `  https://testnet.nearblocks.io/txns/${tx}` : ""}`);
+  console.log(`${passed ? "BLOCKED " : "UNEXPECTED"}  ${title}: ${got}${tx ? `  https://loca.loca-ai.workers.dev/#/app/tx/${tx}` : ""}`);
 }
 
 const ft = (from: Account, amount: bigint, msg: unknown) =>

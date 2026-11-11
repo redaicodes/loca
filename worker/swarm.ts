@@ -284,9 +284,10 @@ async function bid(c: Ctx, o: Order, spec: AgentSpec, loans: Loan[]): Promise<bo
     .map((l) => ({ l, d: lenderQuote(l, ctx(c.id(l.slug))), strategy: l.strategy.id }))
     .filter((q) => q.d.bid);
   // The AI underwriter reads the same public record and answers through a model; its reason goes on chain
-  // in the offer's strategy field, so anyone can see why it priced the loan the way it did.
+  // in the offer's strategy field, so anyone can see why it priced the loan the way it did. It looks at
+  // every other request, which keeps the hosted demo inside its NEAR AI credit (~$0.0003 a decision).
   const ai = LENDERS.find((l) => l.ai);
-  if (ai && c.env.NEAR_AI_API_KEY && c.chain.left() >= 6) {
+  if (ai && c.env.NEAR_AI_API_KEY && o.id % 2 === 0 && c.chain.left() >= 6) {
     c.chain.requests++;
     try {
       const d = await underwrite(ctx(c.id(ai.slug)), { apiKey: c.env.NEAR_AI_API_KEY, model: c.env.NEAR_AI_MODEL });

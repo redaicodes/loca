@@ -109,6 +109,8 @@ try {
   const st = async (a: Account) => BigInt(await view<string>(p, M, "storage_balance_of", { account_id: a.accountId }));
   const [aSt, l1St, ownerSt] = [await st(agent), await st(l1), BigInt(await view<string>(p, M, "storage_balance_of", { account_id: env.root.accountId }))];
   const accBefore = await p.viewAccount({ accountId: M });
+  const totalsPre = JSON.stringify((await view<{ totals: unknown }>(p, M, "get_market")).totals);
+  const scorePre = (await view<{ score: number }>(p, M, "get_score", { agent_id: agent.accountId })).score;
   const pr = await call<number>(env.root, M, "prune", { limit: 50 });
   const tx = await p.viewTransactionStatus({ txHash: pr.hash, accountId: env.root.accountId, waitUntil: "FINAL" });
   const gas = tx.receipts_outcome.reduce((g, r) => g + BigInt(r.outcome.gas_burnt), 0n);
@@ -126,8 +128,8 @@ try {
   check(BigInt(await view<string>(p, M, "storage_balance_of", { account_id: env.root.accountId })) > ownerSt, "pre-charging order refunded to the owner");
   const m = await view<{ totals: Record<string, unknown>; orders_pruned: number }>(p, M, "get_market");
   check(m.orders_pruned === 4, "orders_pruned counter");
-  check(JSON.stringify(m.totals) === JSON.stringify((await view<{ totals: unknown }>(p, M, "get_market")).totals) && m.totals.loans_repaid === before.totals.loans_repaid, "totals unchanged by pruning");
-  check((await view<{ score: number }>(p, M, "get_score", { agent_id: agent.accountId })).score === scoreBefore.score, "score unchanged by pruning");
+  check(JSON.stringify(m.totals) === totalsPre, "totals unchanged by pruning");
+  check((await view<{ score: number }>(p, M, "get_score", { agent_id: agent.accountId })).score === scorePre, "score unchanged by pruning");
 } finally {
   await env.close();
 }

@@ -188,10 +188,10 @@ The contract never panics on a deposit that breaks a business rule. It credits t
 
 ## Security
 
-`pnpm guardrails` attacks the live market from its own accounts and records what stopped each attempt in [docs/guardrails.json](docs/guardrails.json). Last run: **16 of 16 refused**.
+`pnpm guardrails` attacks the live market from its own accounts and records what stopped each attempt in [docs/guardrails.json](docs/guardrails.json). Last run (2026-11-11, after the upgrade): **25 of 25 refused**.
 
-- **13 refused by the contract:** an operator paying its own agent, dust orders, orders or bids without prepaid storage, advances over 50%, loans routed to the operator or an unapproved vendor, a customer lending against its own order, fees above the agent's cap, a second loan on one order, pulling the bond mid-loan, early cancellation and early release.
-- **3 refused by NEAR before execution:** the agent's function-call key trying to move tokens, call an admin method or attach NEAR.
+- **20 refused by the contract:** an operator paying its own agent, dust orders, orders or bids without prepaid storage, advances over 50%, loans routed to the operator or an unapproved vendor, an agent taking its operator's bond, a stranger planting a bond, pulling the bond while lenders can still bid or mid-loan, a customer lending against its own order, fees above the agent's cap, a second loan on one order, a lender cancelling a rival's bid, withdrawing storage twice, a lender approving the work, a customer acting as arbiter, early cancellation and early release.
+- **5 refused by NEAR before execution:** the agent's function-call key trying to move tokens, call an admin method, attach NEAR, pull the bond or add itself a full-access key.
 
 | Threat | Handling |
 |---|---|
