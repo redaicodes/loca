@@ -1,7 +1,7 @@
 {
   "contract": "market.loca-swarm-mvwu8dfo.testnet",
-  "ranAt": "2026-11-11T08:45:40.457Z",
-  "orderId": 24152,
+  "ranAt": "2026-11-11T17:29:43.655Z",
+  "orderId": 25017,
   "cases": [
     {
       "title": "Operator pays its own agent",
@@ -10,7 +10,7 @@
       "layer": "contract",
       "expected": "ERR_CUSTOMER_RELATED_PARTY",
       "got": "ERR_CUSTOMER_RELATED_PARTY",
-      "tx": "ADeucDdaV8ku7Zxzc2WnjtqrNp46HDSAzGimCt6kxsSL",
+      "tx": "4PpqiwVw8bWrFTHxfF3Vxoy4LFqFxHL2arjbJeGm1mH6",
       "passed": true
     },
     {
@@ -20,7 +20,7 @@
       "layer": "contract",
       "expected": "ERR_ORDER_TOO_SMALL",
       "got": "ERR_ORDER_TOO_SMALL",
-      "tx": "A3b4GsjL1fQHc6EdsqW6GSfQpXUaKhgxAEuTixUJ3ovT",
+      "tx": "ABmyLkWivi3uAhuPwQHKcZqYqmEdcuqp8ayQVdCsQf88",
       "passed": true
     },
     {
@@ -30,7 +30,17 @@
       "layer": "contract",
       "expected": "ERR_STORAGE_DEPOSIT_REQUIRED",
       "got": "ERR_STORAGE_DEPOSIT_REQUIRED",
-      "tx": "3TD618dHJKBjU1xwdB3dGAsbR3zP2WR4PwV6hgvRcRcg",
+      "tx": "DFtq5q9GZRfREYEtPBLohLgDgTK991isSvsznxtub7uC",
+      "passed": true
+    },
+    {
+      "title": "Order in a made-up customer's name",
+      "actor": "operator",
+      "attempt": "fund its agent under invented customer ids to farm the score",
+      "layer": "contract",
+      "expected": "ERR_CUSTOMER_NOT_SENDER",
+      "got": "ERR_CUSTOMER_NOT_SENDER",
+      "tx": "13tMNyUm7eRdoddkZhfXQD3yM4ihSRre2EXFAAHXgf4d",
       "passed": true
     },
     {
@@ -40,7 +50,7 @@
       "layer": "contract",
       "expected": "ERR_EXCEEDS_ADVANCE_RATE",
       "got": "ERR_EXCEEDS_ADVANCE_RATE",
-      "tx": "ExF5gTgB84axFPZDerA8kVwkKAgZn7vQWMizfLX8ENp6",
+      "tx": "AnES195vkV86MzcuBn8J3iHWA5jvk6RDXXo2fPfYzTJk",
       "passed": true
     },
     {
@@ -50,7 +60,7 @@
       "layer": "contract",
       "expected": "ERR_VENDOR_NOT_IN_POLICY",
       "got": "ERR_VENDOR_NOT_IN_POLICY",
-      "tx": "7gnJL7NpivhrzxAB7Duj8PVD2QGHgEXkRV5Qp3HRNGmt",
+      "tx": "RVJeWCaiDhquaqZbgJRXgwhzumpU1njngn5hBEwnh9x",
       "passed": true
     },
     {
@@ -60,7 +70,17 @@
       "layer": "contract",
       "expected": "ERR_VENDOR_NOT_APPROVED",
       "got": "ERR_VENDOR_NOT_APPROVED",
-      "tx": "24ePr6QSH5EgTmbeHAwnJrUefC7ftnixLAtNaxW5PtVj",
+      "tx": "EioPGPEHE9b2VKhLDUmPhL2enCxpZ1JvBzEYSCeXxrL6",
+      "passed": true
+    },
+    {
+      "title": "Stolen agent key prices a loan for itself",
+      "actor": "agent key",
+      "attempt": "ask for a $20 fee on a $30 advance, to collect through a lender it controls",
+      "layer": "contract",
+      "expected": "ERR_FEE_ABOVE_POLICY",
+      "got": "ERR_FEE_ABOVE_POLICY",
+      "tx": "FrfkSQLB8VttUBm6YaA54GV2X5vbGjgVFBGEk3AzEwwU",
       "passed": true
     },
     {
@@ -70,7 +90,7 @@
       "layer": "contract",
       "expected": "ERR_NOT_OPERATOR",
       "got": "ERR_NOT_OPERATOR",
-      "tx": "5d5jr5iFJ6p1uoyuE6jbMeqeYAo7Ay9BeTLXQrvJCbvJ",
+      "tx": "4WVp55ApRjm67rguP2MxGT1KC2Q36TcEnj1MZ8HpEzmE",
       "passed": true
     },
     {
@@ -80,7 +100,7 @@
       "layer": "contract",
       "expected": "ERR_BOND_LOCKED",
       "got": "ERR_BOND_LOCKED",
-      "tx": "3bXZKWK3iD2UacNosedRVVKw4aATGkpkh9EG9bctkra8",
+      "tx": "8Fu6SDf7m4R7rU3mEb4A5NBM9RHNfJBV81xYwxmU44gn",
       "passed": true
     },
     {
@@ -90,7 +110,7 @@
       "layer": "contract",
       "expected": "ERR_NOT_OPERATOR",
       "got": "ERR_NOT_OPERATOR",
-      "tx": "2DVRQAQR5zKjKm99qxmrxsCJsbNfkuMa5jodoFkFw1rG",
+      "tx": "95amTzP1nt3nQo9R6pMDeqwEvHrEndCvaGgorFR5LvVi",
       "passed": true
     },
     {
@@ -100,7 +120,7 @@
       "layer": "contract",
       "expected": "ERR_LENDER_RELATED_PARTY",
       "got": "ERR_LENDER_RELATED_PARTY",
-      "tx": "EEvc4wAntzRozH6fCgvJQTLhu91ucqEJam6dmx31jHMJ",
+      "tx": "2dcomM56vhzB7eFy14hfFoXqPQENaJVTwX2KTQ7qeVAu",
       "passed": true
     },
     {
@@ -110,7 +130,17 @@
       "layer": "contract",
       "expected": "ERR_STORAGE_DEPOSIT_REQUIRED",
       "got": "ERR_STORAGE_DEPOSIT_REQUIRED",
-      "tx": "2QyLPBLttFhQbGh3apmiWk2gCmsaNZEcneenSrqKZFQJ",
+      "tx": "2VmEAmGVFjSCMPrTkmf6fZQLyRZDuLSvJnugwNTPMph6",
+      "passed": true
+    },
+    {
+      "title": "Bid in another lender's name",
+      "actor": "lender",
+      "attempt": "post a bid that names a different lender, to fake demand",
+      "layer": "contract",
+      "expected": "ERR_LENDER_NOT_SENDER",
+      "got": "ERR_LENDER_NOT_SENDER",
+      "tx": "CPCkwb7nr1SFVnsioE6dfmPSdrNEv2jsk9XeTEEad3EA",
       "passed": true
     },
     {
@@ -120,7 +150,7 @@
       "layer": "contract",
       "expected": "ERR_FEE_TOO_HIGH",
       "got": "ERR_FEE_TOO_HIGH",
-      "tx": "GUWs8cSmBwKuUytMYmZuUrrrAXcZ5kZgDE6tmThedWLa",
+      "tx": "9Z9KHhMaUKVyGHxZPC7kWd6dSVVdEoqZYvQZccU4H6QU",
       "passed": true
     },
     {
@@ -130,7 +160,7 @@
       "layer": "contract",
       "expected": "ERR_ORDER_ALREADY_PLEDGED",
       "got": "ERR_ORDER_ALREADY_PLEDGED",
-      "tx": "5eJQwSKSSPWCtDC66iunPrk5gHiYZuB34YrrE3u5U5xd",
+      "tx": "9Fhpnv5Q2b5XYwo4SE7yqoopVbdZxEtjehERknRvuyzg",
       "passed": true
     },
     {
@@ -140,7 +170,7 @@
       "layer": "contract",
       "expected": "ERR_ACTIVE_LOANS",
       "got": "ERR_ACTIVE_LOANS",
-      "tx": "FtQXUhPNZhpoTJUyBmdbZzNnhTQ9HcN93tuVpwRy1wxw",
+      "tx": "GC6Q6i3GQt9JWyfRhoWmYoyM1N52pAX9JL53svdzfqRP",
       "passed": true
     },
     {
@@ -150,7 +180,7 @@
       "layer": "contract",
       "expected": "ERR_NOT_LENDER",
       "got": "ERR_NOT_LENDER",
-      "tx": "DoCK3afgFUZdvPQbD18c6ZnU2k93KMaP5XMHfwiP6a1i",
+      "tx": "ESm6uxEM8PPM99t3uVEfDNvdgf2MLdW8dS7QPwpuV6Ax",
       "passed": true
     },
     {
@@ -160,7 +190,7 @@
       "layer": "contract",
       "expected": "ERR_STORAGE_AMOUNT",
       "got": "ERR_STORAGE_AMOUNT",
-      "tx": "329gHCvNt9w72MuRSgwxM9XP3zTrNkaZfUZun77Qoqdw",
+      "tx": "54z9CNe27kke5BTXmAnPpDcaxEK4ZBojksFjCytZLQRN",
       "passed": true
     },
     {
@@ -170,7 +200,7 @@
       "layer": "contract",
       "expected": "ERR_BEFORE_DEADLINE",
       "got": "ERR_BEFORE_DEADLINE",
-      "tx": "4edv5DffUbwHaWdz44VuyKM26zC4pxsNuECgY5YqmVfu",
+      "tx": "4xVResCqQs5xCk2UjgjbVkZDZrjAzZZx5QEdMTi6auQq",
       "passed": true
     },
     {
@@ -180,7 +210,7 @@
       "layer": "contract",
       "expected": "ERR_DISPUTE_WINDOW_OPEN",
       "got": "ERR_DISPUTE_WINDOW_OPEN",
-      "tx": "BQV98V2oiwjPnca9CY6traAZDW4Dgj5nQ6rEu853hsaR",
+      "tx": "GnPtJG33b4M4egBeVJBf4FNhKfdmj3WcDfTVPWFF3Khf",
       "passed": true
     },
     {
@@ -190,7 +220,7 @@
       "layer": "contract",
       "expected": "ERR_NOT_CUSTOMER",
       "got": "ERR_NOT_CUSTOMER",
-      "tx": "BvZFVYSnvZ1roFoG5WawPnLdxbAAhRw8Jk9SWCzNSFy7",
+      "tx": "9RkU9PHNqMSe9Zc1y4JvctDKW4ky1ppaxYoa3SpPRvcF",
       "passed": true
     },
     {
@@ -200,7 +230,7 @@
       "layer": "contract",
       "expected": "ERR_NOT_ARBITER",
       "got": "ERR_NOT_ARBITER",
-      "tx": "8T5ofebRanWgzF4tU1Nv5zDjLfYjX8aJRi6VQDxXiv2w",
+      "tx": "HMURCE6KDwe8E854Qywbu4bbnrxdVK9DNLX3QTf94Q5W",
       "passed": true
     },
     {
